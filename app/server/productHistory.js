@@ -20,27 +20,27 @@ export async function getProductHistory(productId) {
  * ปรับสต็อกด้วยหน่วยที่ผู้ใช้เลือก แล้วแปลงเป็นหน่วยย่อยที่สุดก่อนบันทึกลง Product.qty
  * amount = จำนวนตามหน่วยที่เลือก, IN/OUT คือเพิ่ม/ลด, ADJUSTMENT คือตั้งยอดใหม่
  */
-export async function adjustStock({ userId, productId, qtyTypeId, amount, type, note }) {
+export async function adjustStock({ userId, productId, unitTypeId, amount, type, note }) {
     try {
         return await prisma.$transaction(async (tx) => {
             const product = await tx.product.findUniqueOrThrow({
                 where: { id: productId },
-                include: { baseQty: true, ProductQtyType: true },
+                include: { baseUnit: true, ProductUnitType: true },
             })
 
             const allowed =
-                qtyTypeId === product.qtyTypeId ||
-                product.ProductQtyType.some((entry) => entry.qtyTypeId === qtyTypeId)
+                unitTypeId === product.unitTypeId ||
+                product.ProductUnitType.some((entry) => entry.unitTypeId === unitTypeId)
             if (!allowed) {
                 return { ok: false, error: "หน่วยนี้ใช้กับสินค้านี้ไม่ได้" }
             }
 
-            const qtyType =
-                qtyTypeId === product.qtyTypeId
-                    ? product.baseQty
-                    : await tx.qtyType.findUniqueOrThrow({ where: { id: qtyTypeId } })
+            const unitType =
+                unitTypeId === product.unitTypeId
+                    ? product.baseUnit
+                    : await tx.unitType.findUniqueOrThrow({ where: { id: unitTypeId } })
 
-            const factor = qtyType.qty > 0 ? qtyType.qty : 1
+            const factor = unitType.qty > 0 ? unitType.qty : 1
             const oldQty = product.qty
             const changeQty =
                 type === "IN"
@@ -58,21 +58,21 @@ export async function adjustStock({ userId, productId, qtyTypeId, amount, type, 
                 where: { id: productId },
                 data: { qty: newQty },
                 include: {
-                    baseQty: true,
-                    ProductQtyType: { include: { qtyType: true }, orderBy: { id: "asc" } },
+                    baseUnit: true,
+                    ProductUnitType: { include: { unitType: true }, orderBy: { id: "asc" } },
                 },
             })
 
-            const productQtyType = product.ProductQtyType.find(
-                (entry) => entry.qtyTypeId === qtyTypeId
+            const productUnitType = product.ProductUnitType.find(
+                (entry) => entry.unitTypeId === unitTypeId
             )
 
             const history = await tx.productHistory.create({
                 data: {
                     userId,
                     productId,
-                    productQtyTypeId: productQtyType?.id ?? null,
-                    unitName: qtyType.name,
+                    productUnitTypeId: productUnitType?.id ?? null,
+                    unitName: unitType.name,
                     unitAmount: amount,
                     changeQty,
                     oldQty,

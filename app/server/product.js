@@ -1,8 +1,8 @@
 import { prisma } from "@/prisma/prisma.js"
 
 const productInclude = {
-    baseQty: true,
-    ProductQtyType: { include: { qtyType: true }, orderBy: { id: "asc" } },
+    baseUnit: true,
+    ProductUnitType: { include: { unitType: true }, orderBy: { id: "asc" } },
 }
 
 export async function getProducts() {
@@ -31,19 +31,19 @@ export async function getProduct(id) {
     }
 }
 
-/** qty ที่รับมาเป็นหน่วยย่อยที่สุด, extraQtyTypeIds = หน่วยเสริมที่สินค้านี้ใช้ได้ */
-export async function createProduct(name, imageUrl, baseQtyTypeId, qty = 0, extraQtyTypeIds = []) {
+/** qty ที่รับมาเป็นหน่วยย่อยที่สุด, extraUnitTypeIds = หน่วยเสริมที่สินค้านี้ใช้ได้ */
+export async function createProduct(name, imageUrl, baseUnitTypeId, qty = 0, extraUnitTypeIds = []) {
     try {
         const product = await prisma.product.create({
             data: {
                 name,
                 imageUrl,
                 qty,
-                qtyTypeId: baseQtyTypeId,
-                ProductQtyType: {
-                    create: extraQtyTypeIds
-                        .filter((qtyTypeId) => qtyTypeId !== baseQtyTypeId)
-                        .map((qtyTypeId) => ({ qtyTypeId })),
+                unitTypeId: baseUnitTypeId,
+                ProductUnitType: {
+                    create: extraUnitTypeIds
+                        .filter((unitTypeId) => unitTypeId !== baseUnitTypeId)
+                        .map((unitTypeId) => ({ unitTypeId })),
                 },
             },
             include: productInclude,
@@ -55,11 +55,11 @@ export async function createProduct(name, imageUrl, baseQtyTypeId, qty = 0, extr
     }
 }
 
-export async function updateProduct(id, name, imageUrl, baseQtyTypeId) {
+export async function updateProduct(id, name, imageUrl, baseUnitTypeId) {
     try {
         const product = await prisma.product.update({
             where: { id },
-            data: { name, imageUrl, qtyTypeId: baseQtyTypeId },
+            data: { name, imageUrl, unitTypeId: baseUnitTypeId },
             include: productInclude,
         })
         return product

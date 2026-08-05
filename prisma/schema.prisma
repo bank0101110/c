@@ -6,33 +6,39 @@ datasource db {
   provider  = "postgresql"
 }
 
+// ชื่อ model/field ในโค้ดใช้ UnitType แต่ @map ตรึงชื่อตาราง-คอลัมน์เดิมใน DB ไว้
+// ข้อมูลเดิมเลยใช้ต่อได้ทันทีโดยไม่ต้อง migrate
 model Product {
   id Int @id @default(autoincrement())
   name String
   imageUrl String?
   qty Int @default(0)          // ยอดคงเหลือ เก็บเป็นหน่วยย่อยที่สุด (factor = 1)
-  baseQty QtyType @relation(fields: [qtyTypeId],references: [id])
-  qtyTypeId Int                // หน่วยที่ใช้แสดงผลเป็นหลัก
+  baseUnit UnitType @relation(fields: [unitTypeId],references: [id])
+  unitTypeId Int @map("qtyTypeId")   // หน่วยที่ใช้แสดงผลเป็นหลัก
   createdAt DateTime @default(now())
   updateAt DateTime @updatedAt
-  ProductQtyType ProductQtyType[]
+  ProductUnitType ProductUnitType[]
   ProductHistory ProductHistory[]
 }
-model QtyType{
+model UnitType{
   id Int @id @default(autoincrement())
   name String
   qty Int @default(1)          // 1 หน่วยนี้ = กี่หน่วยย่อย เช่น ลัง = 12
   products Product[]
-  productQtyType ProductQtyType[]
+  productUnitType ProductUnitType[]
+
+  @@map("QtyType")
 }
-model ProductQtyType{
+model ProductUnitType{
   id Int @id @default(autoincrement())
   ProductId Int
   product Product @relation(fields: [ProductId],references: [id],onDelete: Cascade)
-  qtyTypeId Int
-  qtyType QtyType @relation(fields: [qtyTypeId],references: [id])
-  @@unique([ProductId,qtyTypeId])
+  unitTypeId Int @map("qtyTypeId")
+  unitType UnitType @relation(fields: [unitTypeId],references: [id])
   ProductHistory ProductHistory[]
+
+  @@unique([ProductId,unitTypeId])
+  @@map("ProductQtyType")
 }
 
 model User{
@@ -49,8 +55,8 @@ model ProductHistory{
   user User @relation(fields: [userId],references: [id])
   productId Int
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  productQtyTypeId Int?
-  productQtyType   ProductQtyType? @relation(fields: [productQtyTypeId], references: [id], onDelete: SetNull)
+  productUnitTypeId Int? @map("productQtyTypeId")
+  productUnitType   ProductUnitType? @relation(fields: [productUnitTypeId], references: [id], onDelete: SetNull)
   unitName      String      // ชื่อหน่วยตอนที่บันทึก (กันหน่วยถูกลบ/แก้ทีหลัง)
   unitAmount    Int         // จำนวนตามหน่วยที่ผู้ใช้กรอก
   changeQty     Int         // จำนวนที่ปรับเพิ่ม (+) หรือลด (-) เป็นหน่วยย่อย

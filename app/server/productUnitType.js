@@ -1,15 +1,15 @@
 import { prisma } from "@/prisma/prisma.js"
 
-export async function addProductUnit(productId, qtyTypeId) {
+export async function addProductUnit(productId, unitTypeId) {
     try {
-        const productQtyType = await prisma.productQtyType.create({
+        const productUnitType = await prisma.productUnitType.create({
             data: {
                 ProductId: productId,
-                qtyTypeId,
+                unitTypeId,
             },
-            include: { qtyType: true },
+            include: { unitType: true },
         })
-        return productQtyType
+        return productUnitType
     } catch (error) {
         console.error(error)
         return null
@@ -18,7 +18,7 @@ export async function addProductUnit(productId, qtyTypeId) {
 
 export async function removeProductUnit(id) {
     try {
-        await prisma.productQtyType.delete({ where: { id } })
+        await prisma.productUnitType.delete({ where: { id } })
         return true
     } catch (error) {
         console.error(error)

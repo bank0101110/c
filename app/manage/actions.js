@@ -2,9 +2,9 @@
 
 import { revalidatePath } from "next/cache"
 
-import { createProduct, deleteProduct } from "@/app/server/product"
-import { addProductUnit } from "@/app/server/productQtyType"
-import { createQtyType, deleteQtyType } from "@/app/server/qtyType"
+import { createProduct, deleteProduct, updateProduct } from "@/app/server/product"
+import { addProductUnit, removeProductUnit } from "@/app/server/productUnitType"
+import { createUnitType, deleteUnitType, findUnitType } from "@/app/server/unitType"
 import { adjustStock, getProductHistory } from "@/app/server/productHistory"
 
 // Server Action ถูกยิงตรงด้วย POST ได้ ไม่ได้มาจาก UI เท่านั้น จึงต้องตรวจค่าซ้ำที่นี่
@@ -24,22 +24,43 @@ function revalidateStock() {
     revalidatePath("/manage")
 }
 
-export async function createProductAction(name, imageUrl, baseQtyTypeId, qty = 0) {
+export async function createProductAction(name, imageUrl, baseUnitTypeId, qty = 0) {
     const trimmed = String(name ?? "").trim()
-    const qtyTypeId = toId(baseQtyTypeId)
+    const unitTypeId = toId(baseUnitTypeId)
     const startQty = toCount(qty)
 
     if (!trimmed) return { ok: false, error: "กรอกชื่อสินค้า" }
-    if (!qtyTypeId) return { ok: false, error: "เลือกหน่วยหลัก" }
+    if (!unitTypeId) return { ok: false, error: "เลือกหน่วยหลัก" }
     if (startQty === null) return { ok: false, error: "ยอดเริ่มต้นไม่ถูกต้อง" }
 
     const product = await createProduct(
         trimmed,
         String(imageUrl ?? "").trim() || null,
-        qtyTypeId,
+        unitTypeId,
         startQty
     )
     if (!product) return { ok: false, error: "สร้างสินค้าไม่สำเร็จ" }
+
+    revalidateStock()
+    return { ok: true, product }
+}
+
+export async function updateProductAction(id, name, imageUrl, baseUnitTypeId) {
+    const productId = toId(id)
+    const trimmed = String(name ?? "").trim()
+    const unitTypeId = toId(baseUnitTypeId)
+
+    if (!productId) return { ok: false, error: "ไม่พบสินค้า" }
+    if (!trimmed) return { ok: false, error: "กรอกชื่อสินค้า" }
+    if (!unitTypeId) return { ok: false, error: "เลือกหน่วยหลัก" }
+
+    const product = await updateProduct(
+        productId,
+        trimmed,
+        String(imageUrl ?? "").trim() || null,
+        unitTypeId
+    )
+    if (!product) return { ok: false, error: "แก้ไขสินค้าไม่สำเร็จ" }
 
     revalidateStock()
     return { ok: true, product }
@@ -56,26 +77,38 @@ export async function deleteProductAction(id) {
     return { ok: true }
 }
 
-export async function addUnitAction(productId, qtyTypeId) {
+export async function addUnitAction(productId, unitTypeId) {
     const product = toId(productId)
-    const qtyType = toId(qtyTypeId)
-    if (!product || !qtyType) return { ok: false, error: "ข้อมูลไม่ครบ" }
+    const unitType = toId(unitTypeId)
+    if (!product || !unitType) return { ok: false, error: "ข้อมูลไม่ครบ" }
 
-    const unit = await addProductUnit(product, qtyType)
+    const unit = await addProductUnit(product, unitType)
     if (!unit) return { ok: false, error: "เพิ่มหน่วยไม่สำเร็จ" }
 
     revalidateStock()
     return { ok: true, unit }
 }
 
-export async function adjustStockAction(userId, productId, qtyTypeId, amount, type, note) {
+// ประวัติไม่หายตอนถอดหน่วย เพราะ ProductHistory เก็บ unitName ไว้ และ FK เป็น SetNull
+export async function removeUnitAction(productUnitTypeId) {
+    const id = toId(productUnitTypeId)
+    if (!id) return { ok: false, error: "ไม่พบหน่วย" }
+
+    const ok = await removeProductUnit(id)
+    if (!ok) return { ok: false, error: "ถอดหน่วยไม่สำเร็จ" }
+
+    revalidateStock()
+    return { ok: true }
+}
+
+export async function adjustStockAction(userId, productId, unitTypeId, amount, type, note) {
     const user = toId(userId)
     const product = toId(productId)
-    const qtyType = toId(qtyTypeId)
+    const unitType = toId(unitTypeId)
     const unitAmount = toCount(amount)
 
     if (!user) return { ok: false, error: "เลือกผู้บันทึก" }
-    if (!product || !qtyType) return { ok: false, error: "ข้อมูลไม่ครบ" }
+    if (!product || !unitType) return { ok: false, error: "ข้อมูลไม่ครบ" }
     if (unitAmount === null) return { ok: false, error: "จำนวนไม่ถูกต้อง" }
     if (!["IN", "OUT", "ADJUSTMENT"].includes(type)) {
         return { ok: false, error: "ชนิดรายการไม่ถูกต้อง" }
@@ -87,7 +120,7 @@ export async function adjustStockAction(userId, productId, qtyTypeId, amount, ty
     const result = await adjustStock({
         userId: user,
         productId: product,
-        qtyTypeId: qtyType,
+        unitTypeId: unitType,
         amount: unitAmount,
         type,
         note: String(note ?? "").trim() || null,
@@ -97,7 +130,7 @@ export async function adjustStockAction(userId, productId, qtyTypeId, amount, ty
     return result
 }
 
-export async function createQtyTypeAction(name, qty) {
+export async function createUnitTypeAction(name, qty) {
     const trimmed = String(name ?? "").trim()
     const factor = Number(qty)
 
@@ -106,18 +139,28 @@ export async function createQtyTypeAction(name, qty) {
         return { ok: false, error: "ตัวคูณต้องเป็นจำนวนเต็มตั้งแต่ 1" }
     }
 
-    const qtyType = await createQtyType(trimmed, factor)
-    if (!qtyType) return { ok: false, error: "สร้างหน่วยไม่สำเร็จ" }
+    // ชื่อซ้ำแต่ตัวคูณต่างกันสร้างได้ (ลัง=20 กับ ลัง=30) ซ้ำทั้งคู่ถึงจะถือว่ามีอยู่แล้ว
+    const existing = await findUnitType(trimmed, factor)
+    if (existing) {
+        return {
+            ok: false,
+            error: `มี "${existing.name} (×${existing.qty})" อยู่แล้ว`,
+            existing,
+        }
+    }
+
+    const unitType = await createUnitType(trimmed, factor)
+    if (!unitType) return { ok: false, error: "สร้างหน่วยไม่สำเร็จ" }
 
     revalidateStock()
-    return { ok: true, qtyType }
+    return { ok: true, unitType }
 }
 
-export async function deleteQtyTypeAction(id) {
-    const qtyTypeId = toId(id)
-    if (!qtyTypeId) return { ok: false, error: "ไม่พบหน่วย" }
+export async function deleteUnitTypeAction(id) {
+    const unitTypeId = toId(id)
+    if (!unitTypeId) return { ok: false, error: "ไม่พบหน่วย" }
 
-    const result = await deleteQtyType(qtyTypeId)
+    const result = await deleteUnitType(unitTypeId)
     if (result.ok) revalidateStock()
     return result
 }

@@ -1,4 +1,5 @@
 import { getProducts } from "@/app/server/product";
+import { getUsers } from "@/app/server/user";
 import { Navbar } from "@/components/landing/navbar";
 import { Hero } from "@/components/landing/hero";
 import { ProductCatalog } from "@/components/landing/product-catalog";
@@ -8,7 +9,7 @@ import { SearchProvider } from "@/components/landing/search-context";
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const products = await getProducts();
+  const [products, users] = await Promise.all([getProducts(), getUsers()]);
 
   return (
     <SearchProvider>
@@ -16,7 +17,7 @@ export default async function Home() {
         <Navbar />
         <main className="flex flex-1 flex-col">
           <Hero />
-          <ProductCatalog products={products} />
+          <ProductCatalog products={products} users={users} />
         </main>
         <Footer />
       </div>

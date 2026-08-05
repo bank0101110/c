@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { NewProductDialog } from "@/components/manage/new-product-dialog";
 import { AdjustStockDialog } from "@/components/manage/adjust-stock-dialog";
-import { AddUnitSelect } from "@/components/manage/add-unit-select";
+import { EditProductDialog } from "@/components/manage/edit-product-dialog";
 import { deleteProductAction } from "@/app/manage/actions";
 import { formatBreakdown, productUnits } from "@/lib/stock";
 
@@ -16,7 +16,7 @@ import { formatBreakdown, productUnits } from "@/lib/stock";
 const COLUMNS =
   "sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.5fr)_auto] sm:gap-4 sm:px-2";
 
-function StockCell({ product, qtyTypes, onUnitAdded }) {
+function StockCell({ product }) {
   const units = productUnits(product);
   const smallestUnit = units.at(-1);
 
@@ -30,19 +30,12 @@ function StockCell({ product, qtyTypes, onUnitAdded }) {
           {formatBreakdown(product.qty, units)}
         </span>
       )}
-      <div className="flex flex-wrap items-center gap-1.5">
-        {product.ProductQtyType.map((entry) => (
-          <Badge key={entry.id} variant="secondary">
-            {entry.qtyType.name} ×{entry.qtyType.qty}
-          </Badge>
-        ))}
-        <AddUnitSelect product={product} qtyTypes={qtyTypes} onAdded={onUnitAdded} />
-      </div>
+   
     </div>
   );
 }
 
-export function ProductsPanel({ products, setProducts, qtyTypes, users }) {
+export function ProductsPanel({ products, setProducts, unitTypes, setUnitTypes, users }) {
   const [error, setError] = useState(null);
   const [isPending, startTransition] = useTransition();
 
@@ -62,17 +55,8 @@ export function ProductsPanel({ products, setProducts, qtyTypes, users }) {
     });
   }
 
-  function handleUnitAdded(productId, unit) {
-    setProducts((prev) =>
-      prev.map((product) =>
-        product.id === productId
-          ? { ...product, ProductQtyType: [...product.ProductQtyType, unit] }
-          : product
-      )
-    );
-  }
-
-  function handleStockAdjusted(updated) {
+  // ทั้งแก้ไขสินค้าและปรับสต็อกคืน product ที่อัปเดตแล้วมาทั้งก้อน
+  function handleProductReplaced(updated) {
     setProducts((prev) =>
       prev.map((product) => (product.id === updated.id ? updated : product))
     );
@@ -83,7 +67,11 @@ export function ProductsPanel({ products, setProducts, qtyTypes, users }) {
       <CardHeader>
         <CardTitle>Products</CardTitle>
         <CardAction>
-          <NewProductDialog qtyTypes={qtyTypes} onCreated={handleCreated} />
+          <NewProductDialog
+            unitTypes={unitTypes}
+            setUnitTypes={setUnitTypes}
+            onCreated={handleCreated}
+          />
         </CardAction>
       </CardHeader>
       <CardContent>
@@ -114,22 +102,23 @@ export function ProductsPanel({ products, setProducts, qtyTypes, users }) {
                 </span>
 
                 <span className="col-start-1 row-start-2 sm:col-start-2 sm:row-start-1">
-                  <Badge variant="outline">{product.baseQty?.name}</Badge>
+                  <Badge variant="outline">{product.baseUnit?.name}</Badge>
                 </span>
 
                 <div className="col-span-2 col-start-1 row-start-3 sm:col-span-1 sm:col-start-3 sm:row-start-1">
-                  <StockCell
-                    product={product}
-                    qtyTypes={qtyTypes}
-                    onUnitAdded={(unit) => handleUnitAdded(product.id, unit)}
-                  />
+                  <StockCell product={product} />
                 </div>
 
                 <div className="col-start-2 row-span-2 row-start-1 flex justify-end gap-1.5 justify-self-end sm:col-start-4 sm:row-span-1">
+                  <EditProductDialog
+                    product={product}
+                    unitTypes={unitTypes}
+                    onUpdated={handleProductReplaced}
+                  />
                   <AdjustStockDialog
                     product={product}
                     users={users}
-                    onAdjusted={handleStockAdjusted}
+                    onAdjusted={handleProductReplaced}
                   />
                   <Button
                     variant="ghost"

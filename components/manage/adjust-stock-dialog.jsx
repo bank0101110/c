@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { ArrowUpDown } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -27,25 +27,45 @@ import {
 import { adjustStockAction } from "@/app/manage/actions";
 import { formatBreakdown, productUnits } from "@/lib/stock";
 
-const TYPE_OPTIONS = [
+export const TYPE_OPTIONS = [
   { value: "IN", label: "Stock in" },
   { value: "OUT", label: "Stock out" },
   { value: "ADJUSTMENT", label: "Adjustment" },
 ];
 
-export function AdjustStockDialog({ product, users, onAdjusted }) {
-  const units = productUnits(product);
+export function AdjustStockDialog({
+  product,
+  users,
+  onAdjusted,
+  defaultType = "IN",
+  typeOptions = TYPE_OPTIONS,
+  trigger,
+  children,
+}) {
+  const units = useMemo(() => productUnits(product), [product]);
   const smallestUnit = units.at(-1);
   const [open, setOpen] = useState(false);
-  const [qtyTypeId, setQtyTypeId] = useState("");
+  const [unitTypeId, setUnitTypeId] = useState("");
   const [userId, setUserId] = useState("");
-  const [type, setType] = useState("IN");
+  const [type, setType] = useState(defaultType);
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState(null);
   const [isPending, startTransition] = useTransition();
 
-  const selectedUnit = units.find((unit) => String(unit.id) === qtyTypeId);
+  const unitItems = useMemo(
+    () =>
+      Object.fromEntries(
+        units.map((unit) => [String(unit.id), `${unit.name} (×${unit.qty})`])
+      ),
+    [units]
+  );
+  const userItems = useMemo(
+    () => Object.fromEntries(users.map((user) => [String(user.id), user.name])),
+    [users]
+  );
+
+  const selectedUnit = units.find((unit) => String(unit.id) === unitTypeId);
   const factor = selectedUnit?.qty ?? 1;
   const parsedAmount = Number(amount);
   const hasAmount = amount !== "" && Number.isInteger(parsedAmount) && parsedAmount >= 0;
@@ -54,16 +74,17 @@ export function AdjustStockDialog({ product, users, onAdjusted }) {
   const availableInUnit = Math.floor(product.qty / factor);
 
   const canSubmit =
-    Boolean(qtyTypeId) &&
+    Boolean(unitTypeId) &&
     Boolean(userId) &&
     hasAmount &&
     (type === "ADJUSTMENT" || parsedAmount > 0) &&
     (type !== "OUT" || parsedAmount * factor <= product.qty);
 
   function reset() {
-    setQtyTypeId("");
-    setUserId("");
-    setType("IN");
+    // มีหน่วยเดียวก็เลือกให้เลย ผู้ใช้จะได้กดน้อยลง
+    setUnitTypeId(units.length === 1 ? String(units[0].id) : "");
+    setUserId(users.length === 1 ? String(users[0].id) : "");
+    setType(defaultType);
     setAmount("");
     setNote("");
     setError(null);
@@ -77,7 +98,7 @@ export function AdjustStockDialog({ product, users, onAdjusted }) {
       const result = await adjustStockAction(
         Number(userId),
         product.id,
-        Number(qtyTypeId),
+        Number(unitTypeId),
         parsedAmount,
         type,
         note.trim() || null
@@ -97,20 +118,23 @@ export function AdjustStockDialog({ product, users, onAdjusted }) {
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) reset();
+        // reset ตอนเปิดด้วย ไม่ใช่แค่ตอนปิด ค่า default จะได้ถูกเซ็ตตั้งแต่ครั้งแรก
+        reset();
       }}
     >
       <DialogTrigger
         render={
-          <Button
-            variant="outline"
-            size="icon-sm"
-            disabled={units.length === 0}
-            aria-label={`Adjust stock for ${product.name}`}
-          />
+          trigger ?? (
+            <Button
+              variant="outline"
+              size="icon-sm"
+              disabled={units.length === 0}
+              aria-label={`Adjust stock for ${product.name}`}
+            />
+          )
         }
       >
-        <ArrowUpDown />
+        {children ?? <ArrowUpDown />}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
@@ -130,7 +154,12 @@ export function AdjustStockDialog({ product, users, onAdjusted }) {
           <form onSubmit={handleSubmit} className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
               <Label>Unit</Label>
-              <Select value={qtyTypeId} onValueChange={setQtyTypeId} disabled={isPending}>
+              <Select
+                items={unitItems}
+                value={unitTypeId}
+                onValueChange={setUnitTypeId}
+                disabled={isPending}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select a unit" />
                 </SelectTrigger>
@@ -146,18 +175,23 @@ export function AdjustStockDialog({ product, users, onAdjusted }) {
 
             <div className="flex flex-col gap-1.5">
               <Label>Type</Label>
-              <Select value={type} onValueChange={setType} disabled={isPending}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TYPE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {/* ปุ่มเรียงกันแทน dropdown เพราะมีไม่กี่ตัวเลือกและกดง่ายกว่าบนมือถือ */}
+              <div className="flex gap-1.5">
+                {typeOptions.map((option) => (
+                  <Button
+                    key={option.value}
+                    type="button"
+                    size="sm"
+                    className="flex-1"
+                    variant={type === option.value ? "default" : "outline"}
+                    aria-pressed={type === option.value}
+                    disabled={isPending}
+                    onClick={() => setType(option.value)}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+              </div>
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -187,7 +221,12 @@ export function AdjustStockDialog({ product, users, onAdjusted }) {
 
             <div className="flex flex-col gap-1.5">
               <Label>Recorded by</Label>
-              <Select value={userId} onValueChange={setUserId} disabled={isPending}>
+              <Select
+                items={userItems}
+                value={userId}
+                onValueChange={setUserId}
+                disabled={isPending}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select a user" />
                 </SelectTrigger>
