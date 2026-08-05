@@ -25,6 +25,7 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { adjustStockAction } from "@/app/manage/actions";
+import { formatBreakdown, productUnits } from "@/lib/stock";
 
 const TYPE_OPTIONS = [
   { value: "IN", label: "Stock in" },
@@ -33,55 +34,61 @@ const TYPE_OPTIONS = [
 ];
 
 export function AdjustStockDialog({ product, users, onAdjusted }) {
-  const units = product.ProductQtyType;
+  const units = productUnits(product);
+  const smallestUnit = units.at(-1);
   const [open, setOpen] = useState(false);
-  const [productQtyTypeId, setProductQtyTypeId] = useState("");
+  const [qtyTypeId, setQtyTypeId] = useState("");
   const [userId, setUserId] = useState("");
   const [type, setType] = useState("IN");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [error, setError] = useState(null);
   const [isPending, startTransition] = useTransition();
 
-  const selectedUnit = units.find((unit) => String(unit.id) === productQtyTypeId);
-  const currentQty = selectedUnit?.qty ?? 0;
+  const selectedUnit = units.find((unit) => String(unit.id) === qtyTypeId);
+  const factor = selectedUnit?.qty ?? 1;
   const parsedAmount = Number(amount);
+  const hasAmount = amount !== "" && Number.isInteger(parsedAmount) && parsedAmount >= 0;
+
+  // ยอดคงเหลือเก็บเป็นหน่วยย่อย แปลงเป็นหน่วยที่เลือกเพื่อบอกว่าตัดออกได้เท่าไหร่
+  const availableInUnit = Math.floor(product.qty / factor);
 
   const canSubmit =
-    Boolean(productQtyTypeId) &&
+    Boolean(qtyTypeId) &&
     Boolean(userId) &&
-    amount !== "" &&
-    !Number.isNaN(parsedAmount) &&
+    hasAmount &&
     (type === "ADJUSTMENT" || parsedAmount > 0) &&
-    (type !== "OUT" || parsedAmount <= currentQty);
+    (type !== "OUT" || parsedAmount * factor <= product.qty);
 
   function reset() {
-    setProductQtyTypeId("");
+    setQtyTypeId("");
     setUserId("");
     setType("IN");
     setAmount("");
     setNote("");
+    setError(null);
   }
 
   function handleSubmit(event) {
     event.preventDefault();
     if (!canSubmit) return;
 
-    const changeQty =
-      type === "IN" ? parsedAmount : type === "OUT" ? -parsedAmount : parsedAmount - currentQty;
-
     startTransition(async () => {
       const result = await adjustStockAction(
         Number(userId),
-        Number(productQtyTypeId),
-        changeQty,
+        product.id,
+        Number(qtyTypeId),
+        parsedAmount,
         type,
         note.trim() || null
       );
-      if (result) {
-        onAdjusted(Number(productQtyTypeId), result.productQtyType.qty);
-        reset();
-        setOpen(false);
+      if (!result.ok) {
+        setError(result.error);
+        return;
       }
+      onAdjusted(result.product);
+      reset();
+      setOpen(false);
     });
   }
 
@@ -98,7 +105,7 @@ export function AdjustStockDialog({ product, users, onAdjusted }) {
           <Button
             variant="outline"
             size="icon-sm"
-            disabled={units.length === 0 || users.length === 0}
+            disabled={units.length === 0}
             aria-label={`Adjust stock for ${product.name}`}
           />
         }
@@ -109,99 +116,113 @@ export function AdjustStockDialog({ product, users, onAdjusted }) {
         <DialogHeader>
           <DialogTitle>Adjust stock — {product.name}</DialogTitle>
           <DialogDescription>
-            Record a stock movement. This updates the unit quantity and logs history.
+            {product.qty} {smallestUnit?.name ?? "unit"} on hand
+            {units.length > 1 && ` — ${formatBreakdown(product.qty, units)}`}
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label>Unit</Label>
-            <Select
-              value={productQtyTypeId}
-              onValueChange={setProductQtyTypeId}
-              disabled={isPending}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a unit" />
-              </SelectTrigger>
-              <SelectContent>
-                {units.map((unit) => (
-                  <SelectItem key={unit.id} value={String(unit.id)}>
-                    {unit.qtyType.name} ({unit.qty} in stock)
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        {users.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No users yet. Add a row to the <code>User</code> table before recording stock
+            movements.
+          </p>
+        ) : (
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label>Unit</Label>
+              <Select value={qtyTypeId} onValueChange={setQtyTypeId} disabled={isPending}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a unit" />
+                </SelectTrigger>
+                <SelectContent>
+                  {units.map((unit) => (
+                    <SelectItem key={unit.id} value={String(unit.id)}>
+                      {unit.name} (×{unit.qty})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label>Type</Label>
-            <Select value={type} onValueChange={setType} disabled={isPending}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TYPE_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Type</Label>
+              <Select value={type} onValueChange={setType} disabled={isPending}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TYPE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="adjust-amount">
-              {type === "ADJUSTMENT" ? "New quantity" : "Amount"}
-            </Label>
-            <Input
-              id="adjust-amount"
-              type="number"
-              min={0}
-              value={amount}
-              onChange={(event) => setAmount(event.target.value)}
-              disabled={isPending}
-            />
-            {type === "OUT" && selectedUnit && (
-              <p className="text-xs text-muted-foreground">{currentQty} currently in stock</p>
-            )}
-          </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="adjust-amount">
+                {type === "ADJUSTMENT" ? "New quantity" : "Amount"}
+                {selectedUnit ? ` (${selectedUnit.name})` : ""}
+              </Label>
+              <Input
+                id="adjust-amount"
+                type="number"
+                min={0}
+                step={1}
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+                disabled={isPending}
+              />
+              {selectedUnit && (
+                <p className="text-xs text-muted-foreground">
+                  {type === "OUT"
+                    ? `${availableInUnit} ${selectedUnit.name} available`
+                    : hasAmount && factor > 1
+                      ? `= ${parsedAmount * factor} ${smallestUnit?.name ?? "unit"}`
+                      : `1 ${selectedUnit.name} = ${factor} ${smallestUnit?.name ?? "unit"}`}
+                </p>
+              )}
+            </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label>Recorded by</Label>
-            <Select value={userId} onValueChange={setUserId} disabled={isPending}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a user" />
-              </SelectTrigger>
-              <SelectContent>
-                {users.map((user) => (
-                  <SelectItem key={user.id} value={String(user.id)}>
-                    {user.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Recorded by</Label>
+              <Select value={userId} onValueChange={setUserId} disabled={isPending}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a user" />
+                </SelectTrigger>
+                <SelectContent>
+                  {users.map((user) => (
+                    <SelectItem key={user.id} value={String(user.id)}>
+                      {user.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="adjust-note">Note (optional)</Label>
-            <Textarea
-              id="adjust-note"
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              disabled={isPending}
-            />
-          </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="adjust-note">Note (optional)</Label>
+              <Textarea
+                id="adjust-note"
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                disabled={isPending}
+              />
+            </div>
 
-          <DialogFooter>
-            <DialogClose render={<Button type="button" variant="outline" />}>
-              Cancel
-            </DialogClose>
-            <Button type="submit" disabled={!canSubmit || isPending}>
-              Save
-            </Button>
-          </DialogFooter>
-        </form>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+
+            <DialogFooter>
+              <DialogClose render={<Button type="button" variant="outline" />}>
+                Cancel
+              </DialogClose>
+              <Button type="submit" disabled={!canSubmit || isPending}>
+                Save
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   );

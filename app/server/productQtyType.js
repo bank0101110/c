@@ -1,12 +1,11 @@
 import { prisma } from "@/prisma/prisma.js"
 
-export async function addProductUnit(productId, qtyTypeId, qty = 0) {
+export async function addProductUnit(productId, qtyTypeId) {
     try {
         const productQtyType = await prisma.productQtyType.create({
             data: {
                 ProductId: productId,
                 qtyTypeId,
-                qty,
             },
             include: { qtyType: true },
         })

@@ -10,17 +10,18 @@ model Product {
   id Int @id @default(autoincrement())
   name String
   imageUrl String?
+  qty Int @default(0)          // ยอดคงเหลือ เก็บเป็นหน่วยย่อยที่สุด (factor = 1)
   baseQty QtyType @relation(fields: [qtyTypeId],references: [id])
-  qtyTypeId Int
+  qtyTypeId Int                // หน่วยที่ใช้แสดงผลเป็นหลัก
   createdAt DateTime @default(now())
   updateAt DateTime @updatedAt
-  CreatedAt DateTime @default(now())
   ProductQtyType ProductQtyType[]
   ProductHistory ProductHistory[]
 }
 model QtyType{
   id Int @id @default(autoincrement())
   name String
+  qty Int @default(1)          // 1 หน่วยนี้ = กี่หน่วยย่อย เช่น ลัง = 12
   products Product[]
   productQtyType ProductQtyType[]
 }
@@ -30,7 +31,6 @@ model ProductQtyType{
   product Product @relation(fields: [ProductId],references: [id],onDelete: Cascade)
   qtyTypeId Int
   qtyType QtyType @relation(fields: [qtyTypeId],references: [id])
-  qty Int
   @@unique([ProductId,qtyTypeId])
   ProductHistory ProductHistory[]
 }
@@ -48,12 +48,14 @@ model ProductHistory{
   userId Int
   user User @relation(fields: [userId],references: [id])
   productId Int
-  product Product @relation(fields: [productId], references: [id])
-  productQtyTypeId Int
-  productQtyType   ProductQtyType @relation(fields: [productQtyTypeId], references: [id], onDelete: Cascade)
-  changeQty     Int         // จำนวนที่ปรับเพิ่ม (+) หรือลด (-)
-  oldQty        Int         // ยอดก่อนปรับ
-  newQty        Int         // ยอดหลังปรับ
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productQtyTypeId Int?
+  productQtyType   ProductQtyType? @relation(fields: [productQtyTypeId], references: [id], onDelete: SetNull)
+  unitName      String      // ชื่อหน่วยตอนที่บันทึก (กันหน่วยถูกลบ/แก้ทีหลัง)
+  unitAmount    Int         // จำนวนตามหน่วยที่ผู้ใช้กรอก
+  changeQty     Int         // จำนวนที่ปรับเพิ่ม (+) หรือลด (-) เป็นหน่วยย่อย
+  oldQty        Int         // ยอดก่อนปรับ เป็นหน่วยย่อย
+  newQty        Int         // ยอดหลังปรับ เป็นหน่วยย่อย
   type          ActionType  // ชนิดรายการ (IN, OUT, ADJUSTMENT)
   note          String?     // หมายเหตุ
   createdAt     DateTime    @default(now())

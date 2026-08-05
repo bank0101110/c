@@ -7,13 +7,13 @@ import {
   CardFooter,
   CardTitle,
 } from "@/components/ui/card";
+import { breakdown, productUnits } from "@/lib/stock";
 
 export function ProductCard({ product }) {
-  const totalStock = product.ProductQtyType.reduce(
-    (sum, entry) => sum + entry.qty,
-    0
-  );
-  const inStock = totalStock > 0;
+  const units = productUnits(product);
+  const smallestUnit = units.at(-1);
+  const inStock = product.qty > 0;
+  const { parts, remainder } = breakdown(product.qty, units);
 
   return (
     <Card className="overflow-hidden py-0">
@@ -35,11 +35,18 @@ export function ProductCard({ product }) {
           {product.name}
         </CardTitle>
         <div className="flex flex-wrap gap-1">
-          {product.ProductQtyType.map((entry) => (
-            <Badge key={entry.id} variant="secondary">
-              {entry.qty} {entry.qtyType.name}
-            </Badge>
-          ))}
+          {inStock ? (
+            <>
+              {parts.map((part) => (
+                <Badge key={part.id} variant="secondary">
+                  {part.count} {part.name}
+                </Badge>
+              ))}
+              {remainder > 0 && <Badge variant="secondary">+{remainder}</Badge>}
+            </>
+          ) : (
+            <Badge variant="secondary">0 {smallestUnit?.name}</Badge>
+          )}
         </div>
       </CardContent>
 

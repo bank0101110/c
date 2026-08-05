@@ -1,13 +1,15 @@
 import { prisma } from "@/prisma/prisma.js"
 
+const productInclude = {
+    baseQty: true,
+    ProductQtyType: { include: { qtyType: true }, orderBy: { id: "asc" } },
+}
+
 export async function getProducts() {
     try {
         const products = await prisma.product.findMany({
             orderBy: { createdAt: "desc" },
-            include: {
-                baseQty: true,
-                ProductQtyType: { include: { qtyType: true } },
-            },
+            include: productInclude,
         })
         return products
     } catch (error) {
@@ -20,10 +22,7 @@ export async function getProduct(id) {
     try {
         const product = await prisma.product.findUnique({
             where: { id },
-            include: {
-                baseQty: true,
-                ProductQtyType: { include: { qtyType: true } },
-            },
+            include: productInclude,
         })
         return product
     } catch (error) {
@@ -32,24 +31,22 @@ export async function getProduct(id) {
     }
 }
 
-export async function createProduct(name, imageUrl, baseQtyTypeId, productQtyTypes = []) {
+/** qty ที่รับมาเป็นหน่วยย่อยที่สุด, extraQtyTypeIds = หน่วยเสริมที่สินค้านี้ใช้ได้ */
+export async function createProduct(name, imageUrl, baseQtyTypeId, qty = 0, extraQtyTypeIds = []) {
     try {
         const product = await prisma.product.create({
             data: {
                 name,
                 imageUrl,
+                qty,
                 qtyTypeId: baseQtyTypeId,
                 ProductQtyType: {
-                    create: productQtyTypes.map((pqt) => ({
-                        qtyTypeId: pqt.qtyTypeId,
-                        qty: pqt.qty,
-                    })),
+                    create: extraQtyTypeIds
+                        .filter((qtyTypeId) => qtyTypeId !== baseQtyTypeId)
+                        .map((qtyTypeId) => ({ qtyTypeId })),
                 },
             },
-            include: {
-                baseQty: true,
-                ProductQtyType: { include: { qtyType: true } },
-            },
+            include: productInclude,
         })
         return product
     } catch (error) {
@@ -63,6 +60,7 @@ export async function updateProduct(id, name, imageUrl, baseQtyTypeId) {
         const product = await prisma.product.update({
             where: { id },
             data: { name, imageUrl, qtyTypeId: baseQtyTypeId },
+            include: productInclude,
         })
         return product
     } catch (error) {

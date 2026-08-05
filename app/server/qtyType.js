@@ -3,7 +3,7 @@ import { prisma } from "@/prisma/prisma.js"
 export async function getQtyTypes() {
     try {
         const qtyTypes = await prisma.qtyType.findMany({
-            orderBy: { name: "asc" },
+            orderBy: [{ qty: "desc" }, { name: "asc" }],
         })
         return qtyTypes
     } catch (error) {
@@ -24,10 +24,10 @@ export async function getQtyType(id) {
     }
 }
 
-export async function createQtyType(name,qty) {
+export async function createQtyType(name, qty = 1) {
     try {
         const qtyType = await prisma.qtyType.create({
-            data: { name,qty },
+            data: { name, qty },
         })
         return qtyType
     } catch (error) {
@@ -36,11 +36,11 @@ export async function createQtyType(name,qty) {
     }
 }
 
-export async function updateQtyType(id, name) {
+export async function updateQtyType(id, name, qty) {
     try {
         const qtyType = await prisma.qtyType.update({
             where: { id },
-            data: { name },
+            data: { name, qty },
         })
         return qtyType
     } catch (error) {
@@ -52,9 +52,13 @@ export async function updateQtyType(id, name) {
 export async function deleteQtyType(id) {
     try {
         await prisma.qtyType.delete({ where: { id } })
-        return true
+        return { ok: true }
     } catch (error) {
+        // FK ค้าง = ยังมีสินค้าใช้หน่วยนี้อยู่
+        if (error?.code === "P2003" || error?.code === "P2014") {
+            return { ok: false, error: "หน่วยนี้ถูกใช้กับสินค้าอยู่ ลบไม่ได้" }
+        }
         console.error(error)
-        return false
+        return { ok: false, error: "ลบหน่วยไม่สำเร็จ" }
     }
 }

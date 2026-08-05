@@ -30,31 +30,42 @@ export function NewProductDialog({ qtyTypes, onCreated }) {
   const [name, setName] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [baseQtyTypeId, setBaseQtyTypeId] = useState("");
+  const [qty, setQty] = useState("0");
+  const [error, setError] = useState(null);
   const [isPending, startTransition] = useTransition();
 
-  const canSubmit = Boolean(name.trim()) && Boolean(baseQtyTypeId);
+  const baseUnit = qtyTypes.find((qtyType) => String(qtyType.id) === baseQtyTypeId);
+  const canSubmit = Boolean(name.trim()) && Boolean(baseQtyTypeId) && Number(qty) >= 0;
 
   function reset() {
     setName("");
     setImageUrl("");
     setBaseQtyTypeId("");
+    setQty("0");
+    setError(null);
   }
 
   function handleSubmit(event) {
     event.preventDefault();
     if (!canSubmit) return;
 
+    // ยอดเริ่มต้นกรอกเป็นหน่วยหลัก แต่เก็บเป็นหน่วยย่อยที่สุด
+    const startQty = Number(qty) * (baseUnit?.qty ?? 1);
+
     startTransition(async () => {
-      const product = await createProductAction(
+      const result = await createProductAction(
         name.trim(),
         imageUrl.trim() || null,
-        Number(baseQtyTypeId)
+        Number(baseQtyTypeId),
+        startQty
       );
-      if (product) {
-        onCreated(product);
-        reset();
-        setOpen(false);
+      if (!result.ok) {
+        setError(result.error);
+        return;
       }
+      onCreated(result.product);
+      reset();
+      setOpen(false);
     });
   }
 
@@ -108,12 +119,29 @@ export function NewProductDialog({ qtyTypes, onCreated }) {
               <SelectContent>
                 {qtyTypes.map((qtyType) => (
                   <SelectItem key={qtyType.id} value={String(qtyType.id)}>
-                    {qtyType.name}
+                    {qtyType.name} (×{qtyType.qty})
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="product-qty">
+              Starting stock{baseUnit ? ` (${baseUnit.name})` : ""}
+            </Label>
+            <Input
+              id="product-qty"
+              type="number"
+              min={0}
+              step={1}
+              value={qty}
+              onChange={(event) => setQty(event.target.value)}
+              disabled={isPending}
+            />
+          </div>
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
           <DialogFooter>
             <DialogClose render={<Button type="button" variant="outline" />}>
