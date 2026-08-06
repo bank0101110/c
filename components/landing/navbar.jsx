@@ -3,8 +3,9 @@
 import { PackageSearch } from "lucide-react";
 
 import { siteConfig } from "@/lib/site-config";
+import { UserMenu } from "@/components/auth/user-menu";
 
-export function Navbar() {
+export function Navbar({ currentUser = null }) {
   return (
     <header
       id="top"
@@ -16,17 +17,21 @@ export function Navbar() {
           {siteConfig.name}
         </a>
 
-        <nav className="flex items-center gap-6 text-sm font-medium text-muted-foreground">
-          {siteConfig.nav.map((item) => (
-            <a
-              key={item.href}
-              href={item.href}
-              className="transition-colors hover:text-foreground"
-            >
-              {item.label}
-            </a>
-          ))}
-        </nav>
+        <div className="flex items-center gap-4 sm:gap-6">
+          <nav className="flex items-center gap-4 text-sm font-medium text-muted-foreground sm:gap-6">
+            {siteConfig.nav.map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                className="transition-colors hover:text-foreground"
+              >
+                {item.label}
+              </a>
+            ))}
+          </nav>
+
+          <UserMenu user={currentUser} />
+        </div>
       </div>
     </header>
   );

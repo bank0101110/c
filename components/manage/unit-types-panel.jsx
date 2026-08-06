@@ -65,26 +65,26 @@ export function UnitTypesPanel({ unitTypes, setUnitTypes }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Unit types</CardTitle>
+        <CardTitle>หน่วยนับ</CardTitle>
         <CardDescription>
-          How many of the smallest unit each one holds. The smallest unit is 1.
+          ตัวคูณคือ 1 หน่วยนี้เท่ากับกี่หน่วยย่อยที่สุด — หน่วยย่อยที่สุดใส่ 1
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <form onSubmit={handleCreate} className="flex flex-col gap-2">
           <div className="flex gap-2">
             <div className="flex flex-1 flex-col gap-1.5">
-              <Label htmlFor="unit-name">Name</Label>
+              <Label htmlFor="unit-name">ชื่อหน่วย</Label>
               <Input
                 id="unit-name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="e.g. Box"
+                placeholder="เช่น ลัง"
                 disabled={isPending}
               />
             </div>
             <div className="flex w-20 flex-col gap-1.5">
-              <Label htmlFor="unit-qty">Holds</Label>
+              <Label htmlFor="unit-qty">ตัวคูณ</Label>
               <Input
                 id="unit-qty"
                 type="number"
@@ -98,14 +98,14 @@ export function UnitTypesPanel({ unitTypes, setUnitTypes }) {
           </div>
           <Button type="submit" size="sm" disabled={isPending || !canSubmit}>
             <Plus />
-            Add unit type
+            เพิ่มหน่วยนับ
           </Button>
         </form>
 
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         {unitTypes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No unit types yet.</p>
+          <p className="text-sm text-muted-foreground">ยังไม่มีหน่วยนับ</p>
         ) : (
           <>
             {/* icon เป็น flex item จริง ไม่ใช่ absolute ทับบน input เลยไม่มีทางชนข้อความ */}
@@ -115,7 +115,7 @@ export function UnitTypesPanel({ unitTypes, setUnitTypes }) {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder={`ค้นหา ${unitTypes.length} หน่วย — ชื่อ หรือ "ลัง 20"`}
-                aria-label="Search unit types"
+                aria-label="ค้นหาหน่วยนับ"
                 className="min-w-0 flex-1 border-0 bg-transparent p-0 text-base outline-none placeholder:text-muted-foreground md:text-sm"
               />
             </div>
@@ -141,7 +141,7 @@ export function UnitTypesPanel({ unitTypes, setUnitTypes }) {
                       size="icon-sm"
                       onClick={() => handleDelete(unitType.id)}
                       disabled={isPending}
-                      aria-label={`Delete ${unitType.name}`}
+                      aria-label={`ลบ ${unitType.name}`}
                     >
                       <Trash2 />
                     </Button>

@@ -32,12 +32,15 @@ import {
   ComboboxTrigger,
   ComboboxValue,
 } from "@/components/ui/combobox";
+import { ImageField } from "@/components/manage/image-field";
 import {
   addUnitAction,
   removeUnitAction,
   updateProductAction,
 } from "@/app/manage/actions";
 import {
+  baseUnitTypes,
+  isBaseUnit,
   sameUnitOption,
   unitOptionFilter,
   unitOptionLabel,
@@ -61,7 +64,21 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
 
   // หน่วยมีได้เป็นหลักร้อย เลยใช้ combobox ที่พิมพ์ค้นได้ทั้งสองช่อง
   const options = useMemo(() => unitOptions(unitTypes), [unitTypes]);
-  const baseOption = options.find((option) => option.id === baseId) ?? null;
+
+  // หน่วยหลักเลือกได้เฉพาะ ×1 เหมือนตอนสร้างสินค้า แต่ถ้าของเดิมเป็น ×N ต้องคงไว้ในลิสต์
+  // ไม่งั้นช่องจะโล่งเหมือนยังไม่ได้เลือก และผู้ใช้จะแก้ชื่อสินค้านั้นไม่ได้เลย
+  const currentBaseUnit = unitTypes.find(
+    (unitType) => unitType.id === product.unitTypeId
+  );
+  const legacyBaseUnit = currentBaseUnit && !isBaseUnit(currentBaseUnit);
+
+  const baseOptions = useMemo(() => {
+    const allowed = baseUnitTypes(unitTypes);
+    if (currentBaseUnit && !isBaseUnit(currentBaseUnit)) allowed.push(currentBaseUnit);
+    return unitOptions(allowed);
+  }, [unitTypes, currentBaseUnit]);
+
+  const baseOption = baseOptions.find((option) => option.id === baseId) ?? null;
 
   // หน่วยหลักไม่ต้องเลือกซ้ำในช่องหน่วยเสริม
   const extraOptions = useMemo(
@@ -171,7 +188,7 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label={`Edit ${product.name}`}
+            aria-label={`แก้ไข ${product.name}`}
           />
         }
       >
@@ -179,15 +196,15 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Edit product</DialogTitle>
+          <DialogTitle>แก้ไขสินค้า</DialogTitle>
           <DialogDescription>
-            Rename the product, change its base unit, or pick which units it can use.
+            เปลี่ยนชื่อ รูป หน่วยหลัก หรือเลือกหน่วยที่ใช้กับสินค้านี้ได้
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor={`edit-name-${product.id}`}>Name</Label>
+            <Label htmlFor={`edit-name-${product.id}`}>ชื่อสินค้า</Label>
             <Input
               id={`edit-name-${product.id}`}
               value={name}
@@ -196,21 +213,26 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
             />
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor={`edit-image-${product.id}`}>Image URL</Label>
-            <Input
-              id={`edit-image-${product.id}`}
-              value={imageUrl}
-              onChange={(event) => setImageUrl(event.target.value)}
-              placeholder="https://..."
-              disabled={isPending}
-            />
-          </div>
+          <ImageField
+            id={`edit-image-${product.id}`}
+            value={imageUrl}
+            onChange={setImageUrl}
+            disabled={isPending}
+          />
 
           <div className="flex flex-col gap-1.5">
-            <Label>Base unit</Label>
+            <Label>หน่วยหลัก</Label>
+            <p className="text-xs text-muted-foreground">
+              เลือกได้เฉพาะหน่วยย่อยที่สุด (×1) — หน่วยที่มีตัวคูณให้ใส่ไว้ที่ &ldquo;หน่วยอื่น&rdquo;
+            </p>
+            {legacyBaseUnit && (
+              <p className="text-xs text-destructive">
+                หน่วยหลักตอนนี้คือ {currentBaseUnit.name} (×{currentBaseUnit.qty})
+                ซึ่งไม่ใช่ ×1 — เปลี่ยนเป็นหน่วย ×1 เมื่อไหร่จะย้อนกลับมาเลือกอันนี้อีกไม่ได้
+              </p>
+            )}
             <Combobox
-              items={options}
+              items={baseOptions}
               value={baseOption}
               onValueChange={(option) =>
                 setBaseUnitTypeId(option ? String(option.id) : "")
@@ -220,10 +242,16 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
               isItemEqualToValue={sameUnitOption}
               limit={50}
               autoHighlight
-              disabled={isPending}
+              disabled={isPending || baseOptions.length === 0}
             >
               <ComboboxInputGroup>
-                <ComboboxInput placeholder={`ค้นหา ${unitTypes.length} หน่วย — ชื่อ หรือ "ลัง 20"`} />
+                <ComboboxInput
+                  placeholder={
+                    baseOptions.length === 0
+                      ? "ยังไม่มีหน่วย ×1 — สร้างที่การ์ดหน่วยนับก่อน"
+                      : `ค้นหา ${baseOptions.length} หน่วย ×1 — พิมพ์ชื่อหน่วย`
+                  }
+                />
                 <ComboboxClear />
                 <ComboboxTrigger />
               </ComboboxInputGroup>
@@ -243,13 +271,13 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
           <Separator />
 
           <div className="flex flex-col gap-1.5">
-            <Label>Other units</Label>
+            <Label>หน่วยอื่น</Label>
             <p className="text-xs text-muted-foreground">
-              หน่วยอื่นที่ใช้ตัดสต็อกสินค้านี้ได้ พิมพ์เพื่อค้นหา — มีผลตอนกด Save
+              หน่วยอื่นที่ใช้ปรับสต็อกสินค้านี้ได้ พิมพ์เพื่อค้นหา — มีผลตอนกดบันทึก
             </p>
 
             {unitTypes.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No unit types yet.</p>
+              <p className="text-sm text-muted-foreground">ยังไม่มีหน่วยนับ</p>
             ) : (
               <>
                 <Combobox
@@ -272,7 +300,7 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
                               <ComboboxChip key={option.id} aria-label={option.label}>
                                 {option.label}
                                 <ComboboxChipRemove
-                                  aria-label={`Remove ${option.label}`}
+                                  aria-label={`เอา ${option.label} ออก`}
                                 />
                               </ComboboxChip>
                             ))}
@@ -311,10 +339,10 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
 
           <DialogFooter>
             <DialogClose render={<Button type="button" variant="outline" />}>
-              Close
+              ปิด
             </DialogClose>
             <Button type="submit" disabled={!canSubmit || isPending}>
-              Save
+              บันทึก
             </Button>
           </DialogFooter>
         </form>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { ArrowUpDown } from "lucide-react";
+import { ArrowUpDown, LogIn } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,17 +25,18 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { adjustStockAction } from "@/app/manage/actions";
+import { allowedStockTypes, canManageProduct } from "@/lib/permissions";
 import { formatBreakdown, productUnits } from "@/lib/stock";
 
 export const TYPE_OPTIONS = [
-  { value: "IN", label: "Stock in" },
-  { value: "OUT", label: "Stock out" },
-  { value: "ADJUSTMENT", label: "Adjustment" },
+  { value: "IN", label: "รับเข้า" },
+  { value: "OUT", label: "ตัดออก" },
+  { value: "ADJUSTMENT", label: "ตั้งยอดใหม่" },
 ];
 
 export function AdjustStockDialog({
   product,
-  users,
+  currentUser,
   onAdjusted,
   defaultType = "IN",
   typeOptions = TYPE_OPTIONS,
@@ -46,7 +47,6 @@ export function AdjustStockDialog({
   const smallestUnit = units.at(-1);
   const [open, setOpen] = useState(false);
   const [unitTypeId, setUnitTypeId] = useState("");
-  const [userId, setUserId] = useState("");
   const [type, setType] = useState(defaultType);
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
@@ -60,10 +60,11 @@ export function AdjustStockDialog({
       ),
     [units]
   );
-  const userItems = useMemo(
-    () => Object.fromEntries(users.map((user) => [String(user.id), user.name])),
-    [users]
-  );
+  // ไม่ใช่เจ้าของ = เข้า-ออกได้ แต่ตั้งยอดใหม่ (ADJUSTMENT) ไม่ได้
+  const availableTypes = useMemo(() => {
+    const allowed = allowedStockTypes(product, currentUser);
+    return typeOptions.filter((option) => allowed.includes(option.value));
+  }, [typeOptions, product, currentUser]);
 
   const selectedUnit = units.find((unit) => String(unit.id) === unitTypeId);
   const factor = selectedUnit?.qty ?? 1;
@@ -75,7 +76,7 @@ export function AdjustStockDialog({
 
   const canSubmit =
     Boolean(unitTypeId) &&
-    Boolean(userId) &&
+    Boolean(currentUser) &&
     hasAmount &&
     (type === "ADJUSTMENT" || parsedAmount > 0) &&
     (type !== "OUT" || parsedAmount * factor <= product.qty);
@@ -83,8 +84,12 @@ export function AdjustStockDialog({
   function reset() {
     // มีหน่วยเดียวก็เลือกให้เลย ผู้ใช้จะได้กดน้อยลง
     setUnitTypeId(units.length === 1 ? String(units[0].id) : "");
-    setUserId(users.length === 1 ? String(users[0].id) : "");
-    setType(defaultType);
+    // defaultType อาจเป็นตัวที่คนนี้ทำไม่ได้ ถอยไปใช้ตัวแรกที่ทำได้แทน
+    setType(
+      availableTypes.some((option) => option.value === defaultType)
+        ? defaultType
+        : (availableTypes[0]?.value ?? defaultType)
+    );
     setAmount("");
     setNote("");
     setError(null);
@@ -96,7 +101,6 @@ export function AdjustStockDialog({
 
     startTransition(async () => {
       const result = await adjustStockAction(
-        Number(userId),
         product.id,
         Number(unitTypeId),
         parsedAmount,
@@ -129,7 +133,7 @@ export function AdjustStockDialog({
               variant="outline"
               size="icon-sm"
               disabled={units.length === 0}
-              aria-label={`Adjust stock for ${product.name}`}
+              aria-label={`ปรับสต็อก ${product.name}`}
             />
           )
         }
@@ -138,22 +142,27 @@ export function AdjustStockDialog({
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Adjust stock — {product.name}</DialogTitle>
+          <DialogTitle>ปรับสต็อก — {product.name}</DialogTitle>
           <DialogDescription>
-            {product.qty} {smallestUnit?.name ?? "unit"} on hand
+            คงเหลือ {product.qty} {smallestUnit?.name ?? "หน่วย"}
             {units.length > 1 && ` — ${formatBreakdown(product.qty, units)}`}
           </DialogDescription>
         </DialogHeader>
 
-        {users.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No users yet. Add a row to the <code>User</code> table before recording stock
-            movements.
-          </p>
+        {!currentUser ? (
+          <div className="flex flex-col items-start gap-3">
+            <p className="text-sm text-muted-foreground">
+              ต้องเข้าสู่ระบบก่อนถึงจะปรับสต็อกได้ ทุกรายการจะบันทึกชื่อผู้ทำไว้ในประวัติ
+            </p>
+            <Button render={<a href="/login" />}>
+              <LogIn />
+              เข้าสู่ระบบ
+            </Button>
+          </div>
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label>Unit</Label>
+              <Label>หน่วย</Label>
               <Select
                 items={unitItems}
                 value={unitTypeId}
@@ -161,7 +170,7 @@ export function AdjustStockDialog({
                 disabled={isPending}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select a unit" />
+                  <SelectValue placeholder="เลือกหน่วย" />
                 </SelectTrigger>
                 <SelectContent>
                   {units.map((unit) => (
@@ -174,10 +183,10 @@ export function AdjustStockDialog({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <Label>Type</Label>
+              <Label>ประเภทรายการ</Label>
               {/* ปุ่มเรียงกันแทน dropdown เพราะมีไม่กี่ตัวเลือกและกดง่ายกว่าบนมือถือ */}
               <div className="flex gap-1.5">
-                {typeOptions.map((option) => (
+                {availableTypes.map((option) => (
                   <Button
                     key={option.value}
                     type="button"
@@ -192,11 +201,16 @@ export function AdjustStockDialog({
                   </Button>
                 ))}
               </div>
+              {!canManageProduct(product, currentUser) && (
+                <p className="text-xs text-muted-foreground">
+                  ตั้งยอดใหม่ได้เฉพาะเจ้าของสินค้า
+                </p>
+              )}
             </div>
 
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="adjust-amount">
-                {type === "ADJUSTMENT" ? "New quantity" : "Amount"}
+                {type === "ADJUSTMENT" ? "ยอดใหม่" : "จำนวน"}
                 {selectedUnit ? ` (${selectedUnit.name})` : ""}
               </Label>
               <Input
@@ -211,37 +225,24 @@ export function AdjustStockDialog({
               {selectedUnit && (
                 <p className="text-xs text-muted-foreground">
                   {type === "OUT"
-                    ? `${availableInUnit} ${selectedUnit.name} available`
+                    ? `ตัดออกได้สูงสุด ${availableInUnit} ${selectedUnit.name}`
                     : hasAmount && factor > 1
-                      ? `= ${parsedAmount * factor} ${smallestUnit?.name ?? "unit"}`
-                      : `1 ${selectedUnit.name} = ${factor} ${smallestUnit?.name ?? "unit"}`}
+                      ? `= ${parsedAmount * factor} ${smallestUnit?.name ?? "หน่วย"}`
+                      : `1 ${selectedUnit.name} = ${factor} ${smallestUnit?.name ?? "หน่วย"}`}
                 </p>
               )}
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <Label>Recorded by</Label>
-              <Select
-                items={userItems}
-                value={userId}
-                onValueChange={setUserId}
-                disabled={isPending}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select a user" />
-                </SelectTrigger>
-                <SelectContent>
-                  {users.map((user) => (
-                    <SelectItem key={user.id} value={String(user.id)}>
-                      {user.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>ผู้บันทึก</Label>
+              {/* คนบันทึกมาจาก session ฝั่ง server เลือกเองไม่ได้ ตรงนี้แค่บอกให้รู้ */}
+              <p className="text-sm text-muted-foreground">
+                {currentUser.name || currentUser.email}
+              </p>
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="adjust-note">Note (optional)</Label>
+              <Label htmlFor="adjust-note">หมายเหตุ (ไม่บังคับ)</Label>
               <Textarea
                 id="adjust-note"
                 value={note}
@@ -254,10 +255,10 @@ export function AdjustStockDialog({
 
             <DialogFooter>
               <DialogClose render={<Button type="button" variant="outline" />}>
-                Cancel
+                ยกเลิก
               </DialogClose>
               <Button type="submit" disabled={!canSubmit || isPending}>
-                Save
+                บันทึก
               </Button>
             </DialogFooter>
           </form>

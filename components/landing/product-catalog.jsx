@@ -12,10 +12,10 @@ import {
   TYPE_OPTIONS,
 } from "@/components/manage/adjust-stock-dialog";
 
-// หน้าแรกให้ตัดเข้า-ออกเท่านั้น ส่วน Adjustment เก็บไว้ที่หน้าจัดการ
+// หน้าแรกให้ตัดเข้า-ออกเท่านั้น ส่วนตั้งยอดใหม่เก็บไว้ที่หน้าจัดการ
 const IN_OUT = TYPE_OPTIONS.filter((option) => option.value !== "ADJUSTMENT");
 
-export function ProductCatalog({ products, users }) {
+export function ProductCatalog({ products, currentUser }) {
   const { query, setQuery } = useSearch();
   const [productList, setProductList] = useState(products);
 
@@ -52,8 +52,8 @@ export function ProductCatalog({ products, users }) {
           <PackageX className="size-8" />
           <p className="text-sm">
             {productList.length === 0
-              ? "No products yet — check back soon."
-              : "No products match your search."}
+              ? "ยังไม่มีสินค้าในระบบ — กลับมาดูใหม่อีกครั้ง"
+              : "ไม่พบสินค้าที่ตรงกับคำค้นหา"}
           </p>
         </div>
       ) : (
@@ -62,7 +62,7 @@ export function ProductCatalog({ products, users }) {
             <AdjustStockDialog
               key={product.id}
               product={product}
-              users={users}
+              currentUser={currentUser}
               defaultType="OUT"
               typeOptions={IN_OUT}
               onAdjusted={handleAdjusted}
@@ -70,7 +70,7 @@ export function ProductCatalog({ products, users }) {
                 <button
                   type="button"
                   className="rounded-xl text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                  aria-label={`ตัดสต็อก ${product.name}`}
+                  aria-label={`ปรับสต็อก ${product.name}`}
                 />
               }
             >

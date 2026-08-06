@@ -17,8 +17,14 @@ model Product {
   unitTypeId Int @map("qtyTypeId")   // หน่วยที่ใช้แสดงผลเป็นหลัก
   createdAt DateTime @default(now())
   updateAt DateTime @updatedAt
+  // คนที่สร้างสินค้านี้ — แก้ไข/ลบ/เปลี่ยนหน่วยได้เฉพาะเจ้าของ คนอื่นตัดสต็อกเข้า-ออกได้อย่างเดียว
+  // null = ของเก่าที่สร้างก่อนมีระบบเจ้าของ, ลบ user แล้วสินค้าต้องไม่หายตามไปด้วย
+  ownerId String?
+  owner User? @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   ProductUnitType ProductUnitType[]
   ProductHistory ProductHistory[]
+
+  @@index([ownerId])
 }
 model UnitType{
   id Int @id @default(autoincrement())
@@ -41,17 +47,77 @@ model ProductUnitType{
   @@map("ProductQtyType")
 }
 
-model User{
-  id Int @id @default(autoincrement())
-  name String @unique
-  createdAt DateTime @default(now())
+// ตาราง auth 4 ตัวข้างล่างเป็น schema มาตรฐานของ Better Auth (สร้างจาก
+// `npx @better-auth/cli generate`) ห้ามเปลี่ยนชื่อฟิลด์/ตาราง ไม่งั้น adapter หาไม่เจอ
+model User {
+  id            String    @id
+  name          String
+  email         String
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
   ProductHistory ProductHistory[]
+  products      Product[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
 }
 
 
 model ProductHistory{
   id Int @id @default(autoincrement())
-  userId Int
+  userId String
   user User @relation(fields: [userId],references: [id])
   productId Int
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)

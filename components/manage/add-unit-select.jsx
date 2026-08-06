@@ -61,7 +61,7 @@ export function AddUnitSelect({ product, unitTypes, onAdded }) {
         disabled={isPending}
       >
         <SelectTrigger size="sm" className="text-xs sm:h-6">
-          <SelectValue placeholder="Add unit" />
+          <SelectValue placeholder="เพิ่มหน่วย" />
         </SelectTrigger>
         <SelectContent>
           {available.map((unitType) => (
@@ -77,7 +77,7 @@ export function AddUnitSelect({ product, unitTypes, onAdded }) {
         variant="ghost"
         disabled={!unitTypeId || isPending}
         onClick={handleAdd}
-        aria-label="Add unit"
+        aria-label="เพิ่มหน่วย"
       >
         <Plus />
       </Button>

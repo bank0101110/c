@@ -5,16 +5,16 @@ import { useState } from "react";
 import { ProductsPanel } from "@/components/manage/products-panel";
 import { UnitTypesPanel } from "@/components/manage/unit-types-panel";
 
-export function ManageDashboard({ products, unitTypes, users }) {
+export function ManageDashboard({ products, unitTypes, currentUser }) {
   const [productList, setProductList] = useState(products);
   const [unitTypeList, setUnitTypeList] = useState(unitTypes);
 
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="font-heading text-2xl font-semibold">Manage inventory</h1>
+        <h1 className="font-heading text-2xl font-semibold">จัดการสต็อก</h1>
         <p className="text-sm text-muted-foreground">
-          Create products, track units, and adjust stock.
+          เพิ่มสินค้า ตั้งหน่วยนับ และปรับยอดคงเหลือ
         </p>
       </div>
 
@@ -25,7 +25,7 @@ export function ManageDashboard({ products, unitTypes, users }) {
             setProducts={setProductList}
             unitTypes={unitTypeList}
             setUnitTypes={setUnitTypeList}
-            users={users}
+            currentUser={currentUser}
           />
         </div>
 

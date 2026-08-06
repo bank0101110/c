@@ -1,5 +1,8 @@
 import { prisma } from "@/prisma/prisma.js"
 
+// แถวใน user ถูกสร้างโดย Better Auth ตอนล็อกอิน OAuth ครั้งแรก แอปไม่สร้างเอง
+// (id เป็น string ที่ Better Auth ออกให้ ไม่ใช่ autoincrement แล้ว)
+
 export async function getUsers() {
     try {
         const users = await prisma.user.findMany({
@@ -24,22 +27,10 @@ export async function getUser(id) {
     }
 }
 
-export async function getUserByName(name) {
+export async function getUserByEmail(email) {
     try {
         const user = await prisma.user.findUnique({
-            where: { name },
-        })
-        return user
-    } catch (error) {
-        console.error(error)
-        return null
-    }
-}
-
-export async function createUser(name) {
-    try {
-        const user = await prisma.user.create({
-            data: { name },
+            where: { email },
         })
         return user
     } catch (error) {
