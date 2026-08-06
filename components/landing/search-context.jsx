@@ -2,6 +2,8 @@
 
 import { createContext, useContext, useState } from "react";
 
+// คำค้นอยู่ใน context ไม่ใช่ state ของ ProductCatalog เอง เพื่อให้ย้ายช่องค้นหา
+// ไปไว้ที่ navbar หรือ hero ได้โดยไม่ต้องยกสถานะขึ้นไปทั้งต้น
 const SearchContext = createContext(null);
 
 export function SearchProvider({ children }) {
