@@ -32,7 +32,7 @@ import {
   ComboboxTrigger,
   ComboboxValue,
 } from "@/components/ui/combobox";
-import { ImageField } from "@/components/manage/image-field";
+import { ImageField, uploadPendingImage } from "@/components/manage/image-field";
 import { createProductAction, createUnitTypeAction } from "@/app/manage/actions";
 import {
   BASE_UNIT_FACTOR,
@@ -49,6 +49,8 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [imageUrl, setImageUrl] = useState("");
+  // ไฟล์ที่เลือกไว้แต่ยังไม่ได้อัปโหลด รออัปตอนกดสร้าง
+  const [imageFile, setImageFile] = useState(null);
   const [baseUnitTypeId, setBaseUnitTypeId] = useState("");
   const [qty, setQty] = useState("0");
   const [error, setError] = useState(null);
@@ -93,6 +95,7 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
   function reset() {
     setName("");
     setImageUrl("");
+    setImageFile(null);
     setBaseUnitTypeId("");
     setQty("0");
     setError(null);
@@ -158,9 +161,20 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
     );
 
     startTransition(async () => {
+      // อัปโหลดรูปก่อนเป็นอย่างแรก ถ้าพลาดก็ไม่ต้องสร้างสินค้าให้ค้างครึ่ง ๆ กลาง ๆ
+      let finalImageUrl = imageUrl.trim() || null;
+      if (imageFile) {
+        const uploaded = await uploadPendingImage(imageFile);
+        if (!uploaded.ok) {
+          setError(uploaded.error);
+          return;
+        }
+        finalImageUrl = uploaded.url;
+      }
+
       const result = await createProductAction(
         name.trim(),
-        imageUrl.trim() || null,
+        finalImageUrl,
         Number(baseUnitTypeId),
         startQty,
         extraIds
@@ -211,6 +225,8 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
             id="product-image"
             value={imageUrl}
             onChange={setImageUrl}
+            pendingFile={imageFile}
+            onPendingFileChange={setImageFile}
             disabled={isPending}
           />
 

@@ -1,10 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { PackageX, Search } from "lucide-react";
+import { PackageX } from "lucide-react";
 
-import { siteConfig } from "@/lib/site-config";
-import { Input } from "@/components/ui/input";
 import { ProductCard } from "@/components/landing/product-card";
 import { useSearch } from "@/components/landing/search-context";
 import {
@@ -16,7 +14,8 @@ import {
 const IN_OUT = TYPE_OPTIONS.filter((option) => option.value !== "ADJUSTMENT");
 
 export function ProductCatalog({ products, currentUser }) {
-  const { query, setQuery } = useSearch();
+  // ช่องกรอกย้ายไปอยู่ที่ navbar แล้ว ที่นี่เหลือแค่อ่านคำค้นมากรอง
+  const { query } = useSearch();
   const [productList, setProductList] = useState(products);
 
   const filteredProducts = useMemo(() => {
@@ -35,18 +34,6 @@ export function ProductCatalog({ products, currentUser }) {
 
   return (
     <section id="products" className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6">
-      <div className="mx-auto mb-8 max-w-md">
-        <div className="relative">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={siteConfig.hero.searchPlaceholder}
-            className="h-11 pl-9"
-          />
-        </div>
-      </div>
-
       {filteredProducts.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border py-20 text-center text-muted-foreground">
           <PackageX className="size-8" />

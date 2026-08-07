@@ -15,7 +15,7 @@ export default async function Home() {
   return (
     <SearchProvider>
       <div className="flex min-h-full flex-1 flex-col">
-        <Navbar currentUser={currentUser} />
+        <Navbar currentUser={currentUser} showSearch />
         <main className="flex flex-1 flex-col">
           <Hero />
           <ProductCatalog products={products} currentUser={currentUser} />

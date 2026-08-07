@@ -20,7 +20,7 @@ UI เป็นภาษาไทยทั้งหมด
 | ฟอนต์ | IBM Plex Sans Thai | มีทั้งไทย+ละตินในตระกูลเดียว ผสมกันแล้วน้ำหนักไม่แตก |
 | ฐานข้อมูล | PostgreSQL (Supabase) + **Prisma 7** | ใช้ driver adapter `@prisma/adapter-pg` |
 | ล็อกอิน | **Better Auth** + Google OAuth | session เก็บใน DB |
-| เก็บรูป | Google Drive (ไม่บังคับ) | ไม่ตั้งค่าก็ยังใส่ลิงก์รูปเองได้ |
+| เก็บรูป | Supabase Storage (ไม่บังคับ) | ไม่ตั้งค่าก็ยังใส่ลิงก์รูปเองได้ |
 
 ---
 
@@ -103,7 +103,7 @@ lib/
   permissions.js             กฎสิทธิ์ต่อสินค้าหนึ่งชิ้น
   auth.js                    ตั้งค่า Better Auth (server)
   auth-client.js             Better Auth ฝั่ง client
-  google-drive.js            อัปโหลดรูปขึ้น Drive
+  supabase-storage.js        อัปโหลดรูปสินค้าขึ้น Supabase Storage
   site-config.js             ชื่อเว็บ, เมนู, ข้อความ hero
 
 prisma/
@@ -163,7 +163,8 @@ npm run dev                  # http://localhost:3000
 | `BETTER_AUTH_URL` | ✅ | URL ของเว็บ เช่น `http://localhost:3000` |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | ✅ | Google Cloud Console → Credentials → OAuth client ID |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | — | ใส่แล้วปุ่ม GitHub จะโผล่เอง ไม่ใส่ก็ไม่ขึ้น |
-| `GOOGLE_DRIVE_*` | — | สำหรับอัปโหลดรูป ไม่ใส่ก็ยังใส่ลิงก์รูปเองได้ |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | — | สำหรับอัปโหลดรูป ไม่ใส่ก็ยังใส่ลิงก์รูปเองได้ |
+| `SUPABASE_STORAGE_BUCKET` | — | ชื่อ bucket ปลายทาง ไม่ใส่ = `product-images` |
 
 **redirect URI ที่ต้องลงทะเบียนใน Google Cloud Console:**
 ```
@@ -209,29 +210,28 @@ cookie ปลอมได้ ของจริงเช็คอีกทีท
 **ทุกคนจะล็อกอินไม่ได้ทันที** (403 `access_denied`) เพราะโดนบังคับให้ต้องอยู่ในรายการ Test users
 และ refresh token จะหมดอายุทุก 7 วันด้วย
 
-ด้วยเหตุนี้ Google Drive จึงใช้ `GOOGLE_DRIVE_CLIENT_ID` **แยกคนละตัว** กับ `GOOGLE_CLIENT_ID` ที่ใช้ล็อกอิน
-ตั้งค่า Drive พลาดยังไงระบบล็อกอินก็ไม่พังตาม
+การเก็บรูปจึงแยกออกไปที่ Supabase Storage ไม่ไปยุ่งกับ OAuth client ที่ใช้ล็อกอินเลย
 
-### Service account อัปโหลดขึ้น Google Drive ส่วนตัวไม่ได้
+### รูปสินค้าเก็บที่ Supabase Storage
 
-Google ตัดโควตาที่เก็บของ service account ไปแล้ว (`storageQuota.limit = 0`)
-ไฟล์ที่มันสร้างจะเป็นของมันเอง → โดน 403 `Service Accounts do not have storage quota`
-**แชร์โฟลเดอร์จาก Drive ส่วนตัวให้ service account ก็ไม่ช่วย** เพราะเจ้าของไฟล์ยังเป็น service account อยู่ดี
+[`lib/supabase-storage.js`](lib/supabase-storage.js) ยิง Storage REST API ตรง ๆ
+ไม่ได้ลง `@supabase/supabase-js` เพราะใช้แค่ upload ครั้งเดียว ไม่คุ้มกับการเพิ่ม dependency
 
-ทางที่ใช้ได้จริง:
+อัปโหลด**ฝั่งเซิร์ฟเวอร์** ผ่าน Server Action ที่เช็ค `requireUser()` มาก่อน
+คนไม่ได้ล็อกอินจึงอัปโหลดไม่ได้ และ key ไม่เคยหลุดไปถึงเบราว์เซอร์
 
-| วิธี | ใช้ได้เมื่อไหร่ |
-|---|---|
-| Shared Drive + service account | ต้องมี Google Workspace |
-| OAuth refresh token ของบัญชีจริง | ใช้กับ Gmail ทั่วไปได้ ไฟล์กินโควตา 15GB ของบัญชีนั้น |
+ต้องเตรียมสองอย่างที่ Dashboard:
 
-โค้ดใน [`lib/google-drive.js`](lib/google-drive.js) รองรับทั้งสองแบบและเลือกให้อัตโนมัติ
+1. **Storage → New bucket** ชื่อ `product-images` แล้วตั้งเป็น **Public**
+   ถ้าไม่ public จะอัปโหลดขึ้นได้แต่ `<img>` โหลดรูปไม่ขึ้น
+2. **Project Settings → API** ก๊อป `service_role` key มาใส่ `SUPABASE_SERVICE_ROLE_KEY`
 
-### ลิงก์รูปจาก Google Drive
+**ต้องเป็น `service_role` ไม่ใช่ `anon`** เพราะการเขียนลง `storage.objects` ติด RLS อยู่
+คีย์นี้ข้ามสิทธิ์ได้ทั้งโปรเจกต์ — อยู่ฝั่งเซิร์ฟเวอร์เท่านั้น ห้ามขึ้นชื่อ `NEXT_PUBLIC_` เด็ดขาด
 
-ลิงก์แชร์ปกติ (`drive.google.com/file/d/.../view`) เป็นหน้าเว็บ ใส่ใน `<img>` ไม่ขึ้น
-โค้ดเลยเก็บเป็น `drive.google.com/thumbnail?id=<id>&sz=w1000` ซึ่งคืนไฟล์รูปตรง ๆ
-**ผลข้างเคียง: GIF จะไม่ขยับ** เพราะ endpoint นี้เรนเดอร์เป็นภาพนิ่ง
+URL ที่เก็บลง `Product.imageUrl` เป็นลิงก์ตรงไปที่ไฟล์
+(`<SUPABASE_URL>/storage/v1/object/public/<bucket>/<uuid>.<ext>`) ใส่ใน `<img>` ได้เลย
+ชื่อไฟล์สุ่มเป็น UUID ใหม่เสมอ ไม่เชื่อชื่อไฟล์ที่ผู้ใช้ส่งมา
 
 ### อัปโหลดไฟล์ผ่าน Server Action จำกัด 1MB โดย default
 

@@ -17,8 +17,8 @@ import { createUnitType, deleteUnitType, findUnitType, getUnitType } from "@/app
 import { adjustStock, getProductHistory } from "@/app/server/productHistory"
 import { getCurrentUser } from "@/app/server/session"
 import { allowedStockTypes, canManageProduct } from "@/lib/permissions"
-import { uploadProductImage } from "@/lib/google-drive"
 import { BASE_UNIT_FACTOR } from "@/lib/stock"
+import { uploadProductImage } from "@/lib/supabase-storage"
 
 // Server Action เปิดรับ POST จากภายนอกได้เหมือน API endpoint การเช็คที่ UI ไม่พอ
 // ทุกตัวที่แก้ข้อมูลต้องเรียกอันนี้ก่อน
@@ -271,7 +271,7 @@ export async function deleteUnitTypeAction(id) {
 }
 
 /**
- * อัปโหลดรูปสินค้าขึ้น Google Drive แล้วคืน URL สาธารณะ
+ * อัปโหลดรูปสินค้าขึ้น Supabase Storage แล้วคืน URL สาธารณะ
  * แยกจากตอนสร้าง/แก้สินค้า เพื่อให้เห็นรูปพรีวิวทันทีตั้งแต่ยังไม่กดบันทึก
  */
 export async function uploadProductImageAction(formData) {

@@ -32,7 +32,7 @@ import {
   ComboboxTrigger,
   ComboboxValue,
 } from "@/components/ui/combobox";
-import { ImageField } from "@/components/manage/image-field";
+import { ImageField, uploadPendingImage } from "@/components/manage/image-field";
 import {
   addUnitAction,
   removeUnitAction,
@@ -55,6 +55,8 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(product.name);
   const [imageUrl, setImageUrl] = useState(product.imageUrl ?? "");
+  // ไฟล์ที่เลือกไว้แต่ยังไม่ได้อัปโหลด รออัปตอนกดบันทึก
+  const [imageFile, setImageFile] = useState(null);
   const [baseUnitTypeId, setBaseUnitTypeId] = useState(String(product.unitTypeId));
   const [selectedUnitIds, setSelectedUnitIds] = useState(() => unitIdsOf(product));
   const [error, setError] = useState(null);
@@ -102,6 +104,7 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
   function seed() {
     setName(product.name);
     setImageUrl(product.imageUrl ?? "");
+    setImageFile(null);
     setBaseUnitTypeId(String(product.unitTypeId));
     setSelectedUnitIds(unitIdsOf(product));
     setError(null);
@@ -133,6 +136,17 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
       .map(([, entryId]) => entryId);
 
     startTransition(async () => {
+      // อัปโหลดรูปก่อนแตะหน่วย ถ้าพลาดจะได้ยังไม่มีอะไรถูกแก้เลย
+      let finalImageUrl = imageUrl.trim() || null;
+      if (imageFile) {
+        const uploaded = await uploadPendingImage(imageFile);
+        if (!uploaded.ok) {
+          setError(uploaded.error);
+          return;
+        }
+        finalImageUrl = uploaded.url;
+      }
+
       let failed = null;
 
       for (const unitTypeId of toAdd) {
@@ -157,7 +171,7 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
       const result = await updateProductAction(
         product.id,
         name.trim(),
-        imageUrl.trim() || null,
+        finalImageUrl,
         baseId
       );
       if (!result.ok) {
@@ -217,6 +231,8 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
             id={`edit-image-${product.id}`}
             value={imageUrl}
             onChange={setImageUrl}
+            pendingFile={imageFile}
+            onPendingFileChange={setImageFile}
             disabled={isPending}
           />
 
