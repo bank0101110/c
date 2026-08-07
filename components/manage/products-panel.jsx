@@ -24,7 +24,7 @@ function Thumbnail({ product }) {
   const showImage = Boolean(product.imageUrl) && !failed;
 
   return (
-    <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted sm:size-10">
+    <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted transition-colors group-hover:border-foreground/25 sm:size-10">
       {showImage ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -32,7 +32,7 @@ function Thumbnail({ product }) {
           alt={product.name}
           loading="lazy"
           onError={() => setFailed(true)}
-          className="size-full object-cover"
+          className="size-full object-cover transition-transform duration-300 group-hover:scale-110"
         />
       ) : (
         <Package className="size-4 text-muted-foreground" />
@@ -138,7 +138,7 @@ export function ProductsPanel({
             {products.map((product) => (
               <div
                 key={product.id}
-                className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1.5 border-b border-border py-3 transition-colors last:border-0 sm:items-center sm:rounded-lg sm:hover:bg-muted/50 ${COLUMNS}`}
+                className={`group grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1.5 border-b border-border py-3 transition-colors last:border-0 sm:items-center sm:rounded-lg sm:hover:bg-muted/60 ${COLUMNS}`}
               >
                 <div className="col-start-1 row-span-3 row-start-1 sm:row-span-1">
                   {/* URL เปลี่ยนเมื่อไหร่ต้องได้ลองโหลดใหม่ ไม่ค้างสถานะรูปพังของอันเก่า */}

@@ -191,7 +191,9 @@ export function AdjustStockDialog({
                     key={option.value}
                     type="button"
                     size="sm"
-                    className="flex-1"
+                    // ปุ่มขนาด sm ยุบเหลือ 28px ตอนจอกว้าง ซึ่งเตี้ยไปสำหรับสระบน/วรรณยุกต์
+                    // ของไทย เลยล็อกให้สูงขึ้นอีกหน่อย (จัดกึ่งกลางมาจาก Button อยู่แล้ว)
+                    className="h-9 flex-1 sm:h-8"
                     variant={type === option.value ? "default" : "outline"}
                     aria-pressed={type === option.value}
                     disabled={isPending}

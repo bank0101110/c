@@ -129,10 +129,34 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* บางคนตั้งค่าเครื่องให้ลดการเคลื่อนไหว (เมาแอนิเมชัน/ไวต่อการกระตุก) ต้องเคารพค่านั้น
+     ไม่ปิดทิ้งเลยแต่ย่นให้สั้นจนแทบไม่ทัน เพราะโค้ดบางส่วนรอ transitionend/animationend */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
   html {
     @apply font-sans;
     /* สระบน/ล่างกับวรรณยุกต์ของไทยกินความสูงมากกว่าละติน บรรทัดชิดกว่านี้จะดูอึดอัด
        คลาส leading-* ที่ตั้งไว้ในคอมโพเนนต์ยังทับค่านี้ได้ตามปกติ */
     line-height: 1.65;
+  }
+
+  /* ค่า 1.65 ข้างบนไว้สำหรับ "เนื้อความ" ที่ไหลหลายบรรทัด
+     แต่คอนโทรลพวกนี้ล็อกความสูงไว้ตายตัว (เช่นปุ่ม sm สูง 28px) พอกล่องบรรทัด
+     สูงเกือบเท่าตัวปุ่ม ข้อความไทยจะถูกดันจนดูไม่อยู่กึ่งกลาง — คืนค่าตามเมตริกฟอนต์
+     textarea ไม่รวมด้วย เพราะพิมพ์หลายบรรทัดต้องการระยะห่างแบบเนื้อความ */
+  button,
+  input,
+  select,
+  [data-slot="button"] {
+    line-height: normal;
   }
 }

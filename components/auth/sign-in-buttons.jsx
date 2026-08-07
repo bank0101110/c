@@ -56,14 +56,16 @@ export function SignInButtons({ providers, callbackURL = "/manage" }) {
             type="button"
             variant="outline"
             // ปุ่มหลักของหน้านี้ เลยไม่ยุบความสูงลงตอนจอกว้างเหมือนปุ่มทั่วไป
-            className="h-11 w-full gap-3 text-sm sm:h-11"
+            className="group h-11 w-full gap-3 text-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md sm:h-11"
             disabled={pendingProvider !== null}
             onClick={() => handleSignIn(provider)}
           >
             {isPending ? (
               <Loader2 className="size-5 animate-spin" />
             ) : (
-              Icon && <Icon className="size-5" />
+              Icon && (
+                <Icon className="size-5 transition-transform duration-300 group-hover:scale-110" />
+              )
             )}
             {isPending
               ? "กำลังพาไปหน้าล็อกอิน..."

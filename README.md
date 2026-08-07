@@ -212,6 +212,21 @@ cookie ปลอมได้ ของจริงเช็คอีกทีท
 ด้วยเหตุนี้ Google Drive จึงใช้ `GOOGLE_DRIVE_CLIENT_ID` **แยกคนละตัว** กับ `GOOGLE_CLIENT_ID` ที่ใช้ล็อกอิน
 ตั้งค่า Drive พลาดยังไงระบบล็อกอินก็ไม่พังตาม
 
+### Service account อัปโหลดขึ้น Google Drive ส่วนตัวไม่ได้
+
+Google ตัดโควตาที่เก็บของ service account ไปแล้ว (`storageQuota.limit = 0`)
+ไฟล์ที่มันสร้างจะเป็นของมันเอง → โดน 403 `Service Accounts do not have storage quota`
+**แชร์โฟลเดอร์จาก Drive ส่วนตัวให้ service account ก็ไม่ช่วย** เพราะเจ้าของไฟล์ยังเป็น service account อยู่ดี
+
+ทางที่ใช้ได้จริง:
+
+| วิธี | ใช้ได้เมื่อไหร่ |
+|---|---|
+| Shared Drive + service account | ต้องมี Google Workspace |
+| OAuth refresh token ของบัญชีจริง | ใช้กับ Gmail ทั่วไปได้ ไฟล์กินโควตา 15GB ของบัญชีนั้น |
+
+โค้ดใน [`lib/google-drive.js`](lib/google-drive.js) รองรับทั้งสองแบบและเลือกให้อัตโนมัติ
+
 ### ลิงก์รูปจาก Google Drive
 
 ลิงก์แชร์ปกติ (`drive.google.com/file/d/.../view`) เป็นหน้าเว็บ ใส่ใน `<img>` ไม่ขึ้น

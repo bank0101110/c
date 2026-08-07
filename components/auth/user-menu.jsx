@@ -25,7 +25,7 @@ function Avatar({ user }) {
       src={user.image}
       alt=""
       onError={() => setFailed(true)}
-      className="size-7 rounded-full object-cover"
+      className="size-7 rounded-full object-cover ring-2 ring-transparent transition-all duration-300 hover:scale-110 hover:ring-foreground/20"
     />
   );
 }

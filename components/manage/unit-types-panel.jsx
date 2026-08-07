@@ -129,7 +129,7 @@ export function UnitTypesPanel({ unitTypes, setUnitTypes }) {
                 {visible.map((unitType) => (
                   <li
                     key={unitType.id}
-                    className="flex items-center gap-2 py-1.5 pr-1.5 pl-3"
+                    className="flex items-center gap-2 py-1.5 pr-1.5 pl-3 transition-colors hover:bg-muted/60"
                   >
                     <span className="min-w-0 flex-1 truncate font-medium">
                       {unitType.name}
