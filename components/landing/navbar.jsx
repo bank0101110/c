@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { PackageSearch } from "lucide-react";
 
 import { siteConfig } from "@/lib/site-config";
@@ -24,13 +25,14 @@ export function Navbar({ currentUser = null, showSearch = false }) {
           <nav className="flex items-center gap-3 text-sm font-medium text-muted-foreground sm:gap-6">
             {siteConfig.nav.map((item) => (
               // ขีดใต้วิ่งจากซ้ายไปขวาด้วย scale-x ลื่นกว่าการอนิเมท width
-              <a
+              // ต้องเป็น Link ไม่ใช่ <a> ไม่งั้นกดทีนึงโหลดใหม่ทั้งหน้า ทั้งที่ layout เหมือนเดิม
+              <Link
                 key={item.href}
                 href={item.href}
                 className="relative py-1 transition-colors after:absolute after:inset-x-0 after:bottom-0 after:h-px after:origin-left after:scale-x-0 after:bg-foreground after:transition-transform after:duration-300 hover:text-foreground hover:after:scale-x-100"
               >
                 {item.label}
-              </a>
+              </Link>
             ))}
           </nav>
 

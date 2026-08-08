@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { ArrowUpDown, LogIn } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -173,7 +174,7 @@ export function AdjustStockDialog({
             <p className="text-sm text-muted-foreground">
               ต้องเข้าสู่ระบบก่อนถึงจะปรับสต็อกได้
             </p>
-            <Button render={<a href="/login" />}>
+            <Button render={<Link href="/login" />}>
               <LogIn />
               เข้าสู่ระบบ
             </Button>

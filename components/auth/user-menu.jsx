@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LogIn, LogOut, User as UserIcon } from "lucide-react";
 
@@ -36,7 +37,7 @@ export function UserMenu({ user }) {
 
   if (!user) {
     return (
-      <Button size="sm" variant="outline" render={<a href="/login" />}>
+      <Button size="sm" variant="outline" render={<Link href="/login" />}>
         <LogIn />
         เข้าสู่ระบบ
       </Button>
