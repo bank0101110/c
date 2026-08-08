@@ -24,6 +24,9 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
+import { useToast } from "@/components/ui/toast";
+import { withMinDuration } from "@/lib/utils";
 import { adjustStockAction } from "@/app/manage/actions";
 import { allowedStockTypes, canManageProduct } from "@/lib/permissions";
 import { formatBreakdown, productUnits } from "@/lib/stock";
@@ -52,6 +55,7 @@ export function AdjustStockDialog({
   const [note, setNote] = useState("");
   const [error, setError] = useState(null);
   const [isPending, startTransition] = useTransition();
+  const { toast } = useToast();
 
   const unitItems = useMemo(
     () =>
@@ -74,12 +78,16 @@ export function AdjustStockDialog({
   // ยอดคงเหลือเก็บเป็นหน่วยย่อย แปลงเป็นหน่วยที่เลือกเพื่อบอกว่าตัดออกได้เท่าไหร่
   const availableInUnit = Math.floor(product.qty / factor);
 
+  const exceedsStock =
+    type === "OUT" && hasAmount && parsedAmount * factor > product.qty;
+
+  // ตั้งใจไม่เอา exceedsStock มาปิดปุ่ม — ปล่อยให้กดได้แล้วเด้ง toast บอกเหตุผล
+  // ปุ่มจางที่กดไม่ติดโดยไม่บอกอะไรเลยคือจุดที่ผู้ใช้งงว่าทำอะไรผิด
   const canSubmit =
     Boolean(unitTypeId) &&
     Boolean(currentUser) &&
     hasAmount &&
-    (type === "ADJUSTMENT" || parsedAmount > 0) &&
-    (type !== "OUT" || parsedAmount * factor <= product.qty);
+    (type === "ADJUSTMENT" || parsedAmount > 0);
 
   function reset() {
     // มีหน่วยเดียวก็เลือกให้เลย ผู้ใช้จะได้กดน้อยลง
@@ -99,13 +107,24 @@ export function AdjustStockDialog({
     event.preventDefault();
     if (!canSubmit) return;
 
+    if (exceedsStock) {
+      toast({
+        variant: "destructive",
+        title: "ตัดออกเกินยอดคงเหลือ",
+        description: `${product.name} เหลือ ${availableInUnit} ${selectedUnit.name} แต่สั่งตัด ${parsedAmount} ${selectedUnit.name}`,
+      });
+      return;
+    }
+
     startTransition(async () => {
-      const result = await adjustStockAction(
-        product.id,
-        Number(unitTypeId),
-        parsedAmount,
-        type,
-        note.trim() || null
+      const result = await withMinDuration(
+        adjustStockAction(
+          product.id,
+          Number(unitTypeId),
+          parsedAmount,
+          type,
+          note.trim() || null
+        )
       );
       if (!result.ok) {
         setError(result.error);
@@ -152,7 +171,7 @@ export function AdjustStockDialog({
         {!currentUser ? (
           <div className="flex flex-col items-start gap-3">
             <p className="text-sm text-muted-foreground">
-              ต้องเข้าสู่ระบบก่อนถึงจะปรับสต็อกได้ ทุกรายการจะบันทึกชื่อผู้ทำไว้ในประวัติ
+              ต้องเข้าสู่ระบบก่อนถึงจะปรับสต็อกได้
             </p>
             <Button render={<a href="/login" />}>
               <LogIn />
@@ -222,10 +241,17 @@ export function AdjustStockDialog({
                 step={1}
                 value={amount}
                 onChange={(event) => setAmount(event.target.value)}
+                aria-invalid={exceedsStock}
                 disabled={isPending}
               />
               {selectedUnit && (
-                <p className="text-xs text-muted-foreground">
+                <p
+                  className={
+                    exceedsStock
+                      ? "text-xs font-medium text-destructive"
+                      : "text-xs text-muted-foreground"
+                  }
+                >
                   {type === "OUT"
                     ? `ตัดออกได้สูงสุด ${availableInUnit} ${selectedUnit.name}`
                     : hasAmount && factor > 1
@@ -260,7 +286,8 @@ export function AdjustStockDialog({
                 ยกเลิก
               </DialogClose>
               <Button type="submit" disabled={!canSubmit || isPending}>
-                บันทึก
+                {isPending && <Spinner />}
+                {isPending ? "กำลังบันทึก..." : "บันทึก"}
               </Button>
             </DialogFooter>
           </form>

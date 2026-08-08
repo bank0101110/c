@@ -168,10 +168,9 @@ export function ImageField({
                 <Upload />
                 {previewUrl || value ? "เปลี่ยนรูป" : "เลือกไฟล์รูป"}
               </Button>
+              {/* เหลือไว้แค่ข้อจำกัดของไฟล์ ซึ่งผู้ใช้ต้องรู้ก่อนเลือก ที่เหลือเป็นกลไกหลังบ้าน */}
               <p className="text-xs text-muted-foreground">
-                {pendingFile
-                  ? "รูปจะถูกอัปโหลดตอนกดบันทึก — JPG, PNG, WebP, GIF, AVIF ไม่เกิน 5 MB"
-                  : "เก็บไว้ใน Supabase Storage — JPG, PNG, WebP, GIF, AVIF ไม่เกิน 5 MB"}
+                JPG, PNG, WebP, GIF, AVIF ไม่เกิน 5 MB
               </p>
             </>
           ) : (
@@ -188,9 +187,6 @@ export function ImageField({
                 placeholder="https://..."
                 disabled={busy}
               />
-              <p className="text-xs text-muted-foreground">
-                วางลิงก์รูปจากเว็บอื่น ระบบไม่ได้เก็บไฟล์ให้ — ลิงก์ตายเมื่อไหร่รูปก็หาย
-              </p>
             </>
           )}
 

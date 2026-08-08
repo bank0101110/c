@@ -13,7 +13,7 @@ export default async function Home() {
   const [products, currentUser] = await Promise.all([getProducts(), getCurrentUser()]);
 
   return (
-    <SearchProvider>
+    <SearchProvider products={products}>
       <div className="flex min-h-full flex-1 flex-col">
         <Navbar currentUser={currentUser} showSearch />
         <main className="flex flex-1 flex-col">

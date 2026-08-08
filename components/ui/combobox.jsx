@@ -135,7 +135,8 @@ function ComboboxContent({
         <ComboboxPrimitive.Popup
           data-slot="combobox-content"
           className={cn(
-            "max-h-[min(var(--available-height),20rem)] w-(--anchor-width) max-w-(--available-width) origin-(--transform-origin) overflow-y-auto overscroll-contain rounded-lg bg-dropdown p-1 text-popover-foreground shadow-xl ring-1 ring-foreground/25 duration-100 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+            // scroll-py-1 กันไม่ให้ไอเทมที่เลื่อนมาด้วยคีย์บอร์ดไปแปะขอบบน/ล่างพอดีจนดูเหมือนโดนตัด
+            "max-h-[min(var(--available-height),20rem)] w-(--anchor-width) max-w-(--available-width) origin-(--transform-origin) scroll-py-1 overflow-y-auto overscroll-contain rounded-xl bg-dropdown p-1 text-popover-foreground shadow-lg ring-1 ring-border duration-150 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-open:slide-in-from-top-1 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
             className
           )}
           {...props} />
@@ -155,7 +156,7 @@ function ComboboxItem({
     <ComboboxPrimitive.Item
       data-slot="combobox-item"
       className={cn(
-        "grid min-h-9 cursor-default grid-cols-[1rem_1fr] items-center gap-2 rounded-md px-2 text-sm outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 data-highlighted:bg-foreground/10 sm:min-h-8",
+        "grid min-h-9 cursor-default grid-cols-[1rem_1fr] items-center gap-2 rounded-lg px-2 text-sm transition-colors outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 data-highlighted:bg-accent data-highlighted:text-accent-foreground data-selected:font-medium sm:min-h-8",
         className
       )}
       {...props}>
@@ -174,7 +175,7 @@ function ComboboxEmpty({
   return (
     <ComboboxPrimitive.Empty
       data-slot="combobox-empty"
-      className={cn("px-2 py-3 text-center text-sm text-muted-foreground", className)}
+      className={cn("px-2 py-6 text-center text-sm text-muted-foreground", className)}
       {...props} />
   );
 }

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Dialog,
   DialogTrigger,
@@ -43,6 +44,7 @@ import {
   unitOptionLabel,
   unitOptions,
 } from "@/lib/stock";
+import { withMinDuration } from "@/lib/utils";
 
 
 export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
@@ -172,12 +174,14 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
         finalImageUrl = uploaded.url;
       }
 
-      const result = await createProductAction(
-        name.trim(),
-        finalImageUrl,
-        Number(baseUnitTypeId),
-        startQty,
-        extraIds
+      const result = await withMinDuration(
+        createProductAction(
+          name.trim(),
+          finalImageUrl,
+          Number(baseUnitTypeId),
+          startQty,
+          extraIds
+        )
       );
       if (!result.ok) {
         setError(result.error);
@@ -248,10 +252,6 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
               </Button>
             </div>
 
-            <p className="text-xs text-muted-foreground">
-              เลือกได้เฉพาะหน่วยย่อยที่สุด (×1) — หน่วยที่มีตัวคูณให้ใส่ไว้ที่ &ldquo;หน่วยอื่น&rdquo;
-            </p>
-
             <Combobox
               items={baseOptions}
               value={selectedOption}
@@ -302,10 +302,6 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
                   />
                 </div>
 
-                <p className="text-xs text-muted-foreground">
-                  สร้างจากตรงนี้ได้เป็นหน่วยย่อยที่สุด (×1) ถ้าอยากได้ตัวคูณ ไปสร้างที่การ์ด &ldquo;หน่วยนับ&rdquo;
-                </p>
-
                 {unitError && <p className="text-xs text-destructive">{unitError}</p>}
 
                 <Button
@@ -344,10 +340,6 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
                 <p className="text-sm text-muted-foreground">ยังไม่มีหน่วยอื่นให้เลือก</p>
               ) : (
                 <>
-                  <p className="text-xs text-muted-foreground">
-                    หน่วยอื่นที่ใช้ตัดสต็อกสินค้านี้ได้ เช่น ลัง (×12) พิมพ์เพื่อค้นหา
-                  </p>
-
                   <Combobox
                     multiple
                     items={extraOptions}
@@ -427,7 +419,12 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
               ยกเลิก
             </DialogClose>
             <Button type="submit" disabled={!canSubmit || isPending}>
-              สร้างสินค้า
+              {isPending && <Spinner />}
+              {isPending
+                ? imageFile
+                  ? "กำลังอัปโหลดรูป..."
+                  : "กำลังสร้าง..."
+                : "สร้างสินค้า"}
             </Button>
           </DialogFooter>
         </form>

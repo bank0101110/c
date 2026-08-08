@@ -56,8 +56,9 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  /* พื้นของ dropdown เข้มกว่า popover นิดหน่อย พอให้แยกเลเยอร์ออกตอนซ้อนบน dialog */
-  --dropdown: oklch(0.9 0 0);
+  /* เข้มกว่า popover แค่นิดเดียวพอให้รู้ว่าเป็นคนละเลเยอร์ตอนซ้อนบน dialog
+     ที่แยกเลเยอร์จริง ๆ คือ ring กับเงา ไม่ใช่พื้นสีเทา — เทาเข้มไปแล้วดูขุ่น */
+  --dropdown: oklch(0.985 0 0);
   --primary: oklch(0.205 0 0);
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
@@ -94,7 +95,7 @@
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
   /* โหมดมืดกลับทาง ให้สว่างกว่า popover นิดหน่อย */
-  --dropdown: oklch(0.29 0 0);
+  --dropdown: oklch(0.26 0 0);
   --primary: oklch(0.922 0 0);
   --primary-foreground: oklch(0.205 0 0);
   --secondary: oklch(0.269 0 0);

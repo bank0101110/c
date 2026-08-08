@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Dialog,
   DialogTrigger,
@@ -46,6 +47,7 @@ import {
   unitOptionLabel,
   unitOptions,
 } from "@/lib/stock";
+import { withMinDuration } from "@/lib/utils";
 
 function unitIdsOf(product) {
   return new Set(product.ProductUnitType.map((entry) => entry.unitTypeId));
@@ -168,11 +170,8 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
       }
 
       // ปิดท้ายด้วย update สินค้า จะได้ product ที่รวมหน่วยล่าสุดกลับมาก้อนเดียว
-      const result = await updateProductAction(
-        product.id,
-        name.trim(),
-        finalImageUrl,
-        baseId
+      const result = await withMinDuration(
+        updateProductAction(product.id, name.trim(), finalImageUrl, baseId)
       );
       if (!result.ok) {
         setError(failed ?? result.error);
@@ -238,9 +237,6 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
 
           <div className="flex flex-col gap-1.5">
             <Label>หน่วยหลัก</Label>
-            <p className="text-xs text-muted-foreground">
-              เลือกได้เฉพาะหน่วยย่อยที่สุด (×1) — หน่วยที่มีตัวคูณให้ใส่ไว้ที่ &ldquo;หน่วยอื่น&rdquo;
-            </p>
             {legacyBaseUnit && (
               <p className="text-xs text-destructive">
                 หน่วยหลักตอนนี้คือ {currentBaseUnit.name} (×{currentBaseUnit.qty})
@@ -288,9 +284,6 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
 
           <div className="flex flex-col gap-1.5">
             <Label>หน่วยอื่น</Label>
-            <p className="text-xs text-muted-foreground">
-              หน่วยอื่นที่ใช้ปรับสต็อกสินค้านี้ได้ พิมพ์เพื่อค้นหา — มีผลตอนกดบันทึก
-            </p>
 
             {unitTypes.length === 0 ? (
               <p className="text-sm text-muted-foreground">ยังไม่มีหน่วยนับ</p>
@@ -343,10 +336,6 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
                     </ComboboxList>
                   </ComboboxContent>
                 </Combobox>
-
-                <p className="text-xs text-muted-foreground">
-                  หน่วยหลักคือ {baseOption?.label ?? "-"} ติดมากับสินค้าเสมอ
-                </p>
               </>
             )}
           </div>
@@ -358,7 +347,12 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
               ปิด
             </DialogClose>
             <Button type="submit" disabled={!canSubmit || isPending}>
-              บันทึก
+              {isPending && <Spinner />}
+              {isPending
+                ? imageFile
+                  ? "กำลังอัปโหลดรูป..."
+                  : "กำลังบันทึก..."
+                : "บันทึก"}
             </Button>
           </DialogFooter>
         </form>
