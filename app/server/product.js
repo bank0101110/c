@@ -20,6 +20,30 @@ export async function getProducts() {
     }
 }
 
+/**
+ * สินค้าของเจ้าของคนเดียว — ใช้ที่หน้า /manage
+ *
+ * หน้าแรกยังโชว์ของทุกคนเหมือนเดิม เพราะใครก็ดูสต็อกและตัดเข้า-ออกได้
+ * ส่วนหน้าจัดการโชว์เฉพาะที่ตัวเองแก้ได้จริง จะได้ไม่มีแถวที่กดปุ่มอะไรไม่ได้เลยมาปน
+ *
+ * หมายเหตุ: สินค้าเก่าที่ ownerId เป็น null จะไม่ขึ้นที่นี่ ทั้งที่ canManageProduct()
+ * ยังให้สิทธิ์แก้อยู่ — ตอนนี้ใน DB ไม่มีสักรายการ และของใหม่ผูกเจ้าของเสมอ
+ * ถ้าวันหนึ่งมีขึ้นมา ให้เปลี่ยน where เป็น { OR: [{ ownerId }, { ownerId: null }] }
+ */
+export async function getProductsByOwner(ownerId) {
+    try {
+        const products = await prisma.product.findMany({
+            where: { ownerId },
+            orderBy: { createdAt: "desc" },
+            include: productInclude,
+        })
+        return products
+    } catch (error) {
+        console.error(error)
+        return []
+    }
+}
+
 export async function getProduct(id) {
     try {
         const product = await prisma.product.findUnique({

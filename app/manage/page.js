@@ -1,4 +1,4 @@
-import { getProducts } from "@/app/server/product";
+import { getProductsByOwner } from "@/app/server/product";
 import { getUnitTypes } from "@/app/server/unitType";
 import { requireUser } from "@/app/server/session";
 import { Navbar } from "@/components/landing/navbar";
@@ -10,7 +10,11 @@ export const dynamic = "force-dynamic";
 export default async function ManagePage() {
   // proxy.js เช็คแค่ว่ามี cookie การเช็คจริงอยู่ตรงนี้ — cookie หมดอายุ/ปลอมจะโดนเด้งที่นี่
   const currentUser = await requireUser("/manage");
-  const [products, unitTypes] = await Promise.all([getProducts(), getUnitTypes()]);
+  // หน้านี้โชว์เฉพาะสินค้าของตัวเอง ส่วนหน้าแรกยังเห็นของทุกคนตามเดิม
+  const [products, unitTypes] = await Promise.all([
+    getProductsByOwner(currentUser.id),
+    getUnitTypes(),
+  ]);
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
