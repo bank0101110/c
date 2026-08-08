@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Spinner } from "@/components/ui/spinner";
 import {
   Dialog,
   DialogTrigger,
@@ -33,6 +32,7 @@ import {
   ComboboxTrigger,
   ComboboxValue,
 } from "@/components/ui/combobox";
+import { useToast } from "@/components/ui/toast";
 import { ImageField, uploadPendingImage } from "@/components/manage/image-field";
 import { createProductAction, createUnitTypeAction } from "@/app/manage/actions";
 import {
@@ -44,7 +44,6 @@ import {
   unitOptionLabel,
   unitOptions,
 } from "@/lib/stock";
-import { withMinDuration } from "@/lib/utils";
 
 
 export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
@@ -55,8 +54,8 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
   const [imageFile, setImageFile] = useState(null);
   const [baseUnitTypeId, setBaseUnitTypeId] = useState("");
   const [qty, setQty] = useState("0");
-  const [error, setError] = useState(null);
   const [isPending, startTransition] = useTransition();
+  const { toast } = useToast();
 
   // ฟอร์มสร้างหน่วยใหม่ในตัว ไม่ต้องปิด dialog ไปสร้างที่ panel Unit types ก่อน
   const [showNewUnit, setShowNewUnit] = useState(false);
@@ -100,7 +99,6 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
     setImageFile(null);
     setBaseUnitTypeId("");
     setQty("0");
-    setError(null);
     setShowNewUnit(false);
     setUnitName("");
     setUnitError(null);
@@ -162,34 +160,52 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
       (unitTypeId) => String(unitTypeId) !== baseUnitTypeId
     );
 
+    // เก็บค่าไว้ก่อนปิด เพราะ reset() จะล้าง state ทิ้งทันที
+    const productName = name.trim();
+    const pendingImage = imageFile;
+    const typedImageUrl = imageUrl.trim() || null;
+
+    // ปิดทันทีไม่รอ server แล้วไปรายงานผลที่ toast
+    reset();
+    setOpen(false);
+
     startTransition(async () => {
       // อัปโหลดรูปก่อนเป็นอย่างแรก ถ้าพลาดก็ไม่ต้องสร้างสินค้าให้ค้างครึ่ง ๆ กลาง ๆ
-      let finalImageUrl = imageUrl.trim() || null;
-      if (imageFile) {
-        const uploaded = await uploadPendingImage(imageFile);
+      let finalImageUrl = typedImageUrl;
+      if (pendingImage) {
+        const uploaded = await uploadPendingImage(pendingImage);
         if (!uploaded.ok) {
-          setError(uploaded.error);
+          toast({
+            variant: "destructive",
+            title: `สร้าง ${productName} ไม่สำเร็จ`,
+            description: uploaded.error,
+            duration: 0,
+          });
           return;
         }
         finalImageUrl = uploaded.url;
       }
 
-      const result = await withMinDuration(
-        createProductAction(
-          name.trim(),
-          finalImageUrl,
-          Number(baseUnitTypeId),
-          startQty,
-          extraIds
-        )
+      const result = await createProductAction(
+        productName,
+        finalImageUrl,
+        Number(baseUnitTypeId),
+        startQty,
+        extraIds
       );
+
       if (!result.ok) {
-        setError(result.error);
+        toast({
+          variant: "destructive",
+          title: `สร้าง ${productName} ไม่สำเร็จ`,
+          description: result.error,
+          duration: 0,
+        });
         return;
       }
+
       onCreated(result.product);
-      reset();
-      setOpen(false);
+      toast({ variant: "success", title: `เพิ่ม ${productName} แล้ว` });
     });
   }
 
@@ -412,19 +428,12 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
             />
           </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
-
           <DialogFooter>
             <DialogClose render={<Button type="button" variant="outline" />}>
               ยกเลิก
             </DialogClose>
             <Button type="submit" disabled={!canSubmit || isPending}>
-              {isPending && <Spinner />}
-              {isPending
-                ? imageFile
-                  ? "กำลังอัปโหลดรูป..."
-                  : "กำลังสร้าง..."
-                : "สร้างสินค้า"}
+              สร้างสินค้า
             </Button>
           </DialogFooter>
         </form>

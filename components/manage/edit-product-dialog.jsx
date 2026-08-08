@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Spinner } from "@/components/ui/spinner";
+import { useToast } from "@/components/ui/toast";
 import {
   Dialog,
   DialogTrigger,
@@ -47,7 +47,6 @@ import {
   unitOptionLabel,
   unitOptions,
 } from "@/lib/stock";
-import { withMinDuration } from "@/lib/utils";
 
 function unitIdsOf(product) {
   return new Set(product.ProductUnitType.map((entry) => entry.unitTypeId));
@@ -61,8 +60,8 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
   const [imageFile, setImageFile] = useState(null);
   const [baseUnitTypeId, setBaseUnitTypeId] = useState(String(product.unitTypeId));
   const [selectedUnitIds, setSelectedUnitIds] = useState(() => unitIdsOf(product));
-  const [error, setError] = useState(null);
   const [isPending, startTransition] = useTransition();
+  const { toast } = useToast();
 
   const baseId = Number(baseUnitTypeId);
 
@@ -109,7 +108,6 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
     setImageFile(null);
     setBaseUnitTypeId(String(product.unitTypeId));
     setSelectedUnitIds(unitIdsOf(product));
-    setError(null);
   }
 
   // แค่เลือกไว้เฉย ๆ ยังไม่ยิง server รอกด Save ทีเดียว
@@ -137,13 +135,29 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
       )
       .map(([, entryId]) => entryId);
 
+    // เก็บค่าไว้ก่อนปิด dialog เพราะ state จะถูก seed ใหม่ตอนเปิดครั้งหน้า
+    const productName = name.trim();
+    const pendingImage = imageFile;
+    const typedImageUrl = imageUrl.trim() || null;
+
+    // ปิดทันทีไม่รอ server แล้วไปรายงานผลที่ toast
+    setOpen(false);
+
+    const fail = (description) =>
+      toast({
+        variant: "destructive",
+        title: `บันทึก ${productName} ไม่สำเร็จ`,
+        description,
+        duration: 0,
+      });
+
     startTransition(async () => {
       // อัปโหลดรูปก่อนแตะหน่วย ถ้าพลาดจะได้ยังไม่มีอะไรถูกแก้เลย
-      let finalImageUrl = imageUrl.trim() || null;
-      if (imageFile) {
-        const uploaded = await uploadPendingImage(imageFile);
+      let finalImageUrl = typedImageUrl;
+      if (pendingImage) {
+        const uploaded = await uploadPendingImage(pendingImage);
         if (!uploaded.ok) {
-          setError(uploaded.error);
+          fail(uploaded.error);
           return;
         }
         finalImageUrl = uploaded.url;
@@ -170,21 +184,27 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
       }
 
       // ปิดท้ายด้วย update สินค้า จะได้ product ที่รวมหน่วยล่าสุดกลับมาก้อนเดียว
-      const result = await withMinDuration(
-        updateProductAction(product.id, name.trim(), finalImageUrl, baseId)
+      const result = await updateProductAction(
+        product.id,
+        productName,
+        finalImageUrl,
+        baseId
       );
+
       if (!result.ok) {
-        setError(failed ?? result.error);
+        fail(failed ?? result.error);
         return;
       }
 
       // เขียนค่าล่าสุดกลับเสมอ ต่อให้บางหน่วยพลาด หน้าจอจะได้ตรงกับ DB
       onUpdated(result.product);
+
+      // แก้สินค้าสำเร็จแต่หน่วยบางตัวไม่ผ่าน ถือว่าไม่ครบ ต้องบอกให้รู้
       if (failed) {
-        setError(failed);
+        fail(failed);
         return;
       }
-      setOpen(false);
+      toast({ variant: "success", title: `บันทึก ${productName} แล้ว` });
     });
   }
 
@@ -340,19 +360,12 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
             )}
           </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
-
           <DialogFooter>
             <DialogClose render={<Button type="button" variant="outline" />}>
               ปิด
             </DialogClose>
             <Button type="submit" disabled={!canSubmit || isPending}>
-              {isPending && <Spinner />}
-              {isPending
-                ? imageFile
-                  ? "กำลังอัปโหลดรูป..."
-                  : "กำลังบันทึก..."
-                : "บันทึก"}
+              บันทึก
             </Button>
           </DialogFooter>
         </form>

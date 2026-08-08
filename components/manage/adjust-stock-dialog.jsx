@@ -25,9 +25,7 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
-import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/components/ui/toast";
-import { withMinDuration } from "@/lib/utils";
 import { adjustStockAction } from "@/app/manage/actions";
 import { allowedStockTypes, canManageProduct } from "@/lib/permissions";
 import { formatBreakdown, productUnits } from "@/lib/stock";
@@ -54,7 +52,6 @@ export function AdjustStockDialog({
   const [type, setType] = useState(defaultType);
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
-  const [error, setError] = useState(null);
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
 
@@ -101,7 +98,6 @@ export function AdjustStockDialog({
     );
     setAmount("");
     setNote("");
-    setError(null);
   }
 
   function handleSubmit(event) {
@@ -117,23 +113,40 @@ export function AdjustStockDialog({
       return;
     }
 
+    // เก็บค่าที่ต้องใช้ในข้อความไว้ก่อน เพราะเดี๋ยว state จะถูก reset ตอนเปิดครั้งหน้า
+    const unitLabel = selectedUnit?.name ?? "หน่วย";
+    const typeLabel =
+      availableTypes.find((option) => option.value === type)?.label ?? "บันทึก";
+
+    // ปิดทันทีไม่รอ server — ที่เหลือไปรายงานผลที่ toast
+    // ถ้าพลาดจริงยังรู้แน่นอนเพราะ toast แบบ destructive ค้างให้อ่าน
+    setOpen(false);
+
     startTransition(async () => {
-      const result = await withMinDuration(
-        adjustStockAction(
-          product.id,
-          Number(unitTypeId),
-          parsedAmount,
-          type,
-          note.trim() || null
-        )
+      const result = await adjustStockAction(
+        product.id,
+        Number(unitTypeId),
+        parsedAmount,
+        type,
+        note.trim() || null
       );
+
       if (!result.ok) {
-        setError(result.error);
+        toast({
+          variant: "destructive",
+          title: `${typeLabel} ${product.name} ไม่สำเร็จ`,
+          description: result.error,
+          duration: 0,
+        });
         return;
       }
+
       onAdjusted(result.product);
-      reset();
-      setOpen(false);
+      toast({
+        variant: "success",
+        title: `${typeLabel} ${product.name} แล้ว`,
+        description: `${parsedAmount} ${unitLabel}`,
+      });
     });
   }
 
@@ -280,15 +293,12 @@ export function AdjustStockDialog({
               />
             </div>
 
-            {error && <p className="text-sm text-destructive">{error}</p>}
-
             <DialogFooter>
               <DialogClose render={<Button type="button" variant="outline" />}>
                 ยกเลิก
               </DialogClose>
               <Button type="submit" disabled={!canSubmit || isPending}>
-                {isPending && <Spinner />}
-                {isPending ? "กำลังบันทึก..." : "บันทึก"}
+                บันทึก
               </Button>
             </DialogFooter>
           </form>
