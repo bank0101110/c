@@ -34,11 +34,7 @@ import {
   ComboboxValue,
 } from "@/components/ui/combobox";
 import { ImageField, uploadPendingImage } from "@/components/manage/image-field";
-import {
-  addUnitAction,
-  removeUnitAction,
-  updateProductAction,
-} from "@/app/manage/actions";
+import { saveProductAction } from "@/app/manage/actions";
 import {
   baseUnitTypes,
   isBaseUnit,
@@ -50,6 +46,40 @@ import {
 
 function unitIdsOf(product) {
   return new Set(product.ProductUnitType.map((entry) => entry.unitTypeId));
+}
+
+/**
+ * สินค้าหน้าตาที่ "น่าจะ" ได้หลังบันทึก เอาไปทับตารางทันทีโดยไม่รอ server
+ * ของจริงจาก server มาถึงเมื่อไหร่ค่อยทับซ้ำอีกที พลาดก็ย้อนกลับเป็นตัวเดิม
+ *
+ * ต้องประกอบ baseUnit/unitType ให้ครบ เพราะตารางกับ dialog ปรับสต็อกอ่านจากตรงนี้
+ */
+function optimisticProduct(product, unitTypes, { name, imageUrl, baseUnitTypeId, unitIds }) {
+  const byUnitTypeId = new Map(unitTypes.map((unitType) => [unitType.id, unitType]));
+  const saved = new Map(
+    product.ProductUnitType.map((entry) => [entry.unitTypeId, entry])
+  );
+
+  return {
+    ...product,
+    name,
+    imageUrl,
+    unitTypeId: baseUnitTypeId,
+    baseUnit: byUnitTypeId.get(baseUnitTypeId) ?? product.baseUnit,
+    ProductUnitType: unitIds
+      .filter((unitTypeId) => byUnitTypeId.has(unitTypeId))
+      .map(
+        (unitTypeId) =>
+          saved.get(unitTypeId) ?? {
+            // id จริงยังไม่รู้จนกว่า server จะตอบ ใช้ค่าลบกันชนกับของจริงไว้ก่อน
+            // (ไม่มีที่ไหนเอา id ของแถวนี้ไปแสดงหรือไปอ้างต่อ)
+            id: -unitTypeId,
+            ProductId: product.id,
+            unitTypeId,
+            unitType: byUnitTypeId.get(unitTypeId),
+          }
+      ),
+  };
 }
 
 export function EditProductDialog({ product, unitTypes, onUpdated }) {
@@ -93,12 +123,6 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
     [extraOptions, selectedUnitIds]
   );
 
-  // unitTypeId -> ProductUnitType.id เอาไว้อ้างตอนถอดหน่วยออก
-  const savedUnits = useMemo(
-    () => new Map(product.ProductUnitType.map((entry) => [entry.unitTypeId, entry.id])),
-    [product.ProductUnitType]
-  );
-
   const canSubmit = Boolean(name.trim()) && Boolean(baseUnitTypeId);
 
   // เปิดทีไรก็ดึงค่าล่าสุดของสินค้ามาใส่ใหม่ กันค่าค้างจากรอบก่อน
@@ -119,21 +143,9 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
     event.preventDefault();
     if (!canSubmit) return;
 
-    // หน่วยหลักไม่ต้องมีแถวซ้ำใน ProductUnitType เลยตัดออกจากทั้งฝั่งเพิ่มและสั่งลบถ้ามีค้าง
-    const toAdd = unitTypes
-      .filter(
-        (unitType) =>
-          selectedUnitIds.has(unitType.id) &&
-          unitType.id !== baseId &&
-          !savedUnits.has(unitType.id)
-      )
-      .map((unitType) => unitType.id);
-
-    const toRemove = [...savedUnits]
-      .filter(
-        ([unitTypeId]) => !selectedUnitIds.has(unitTypeId) || unitTypeId === baseId
-      )
-      .map(([, entryId]) => entryId);
+    // ส่งชุดหน่วยเสริมที่ต้องการไปทั้งชุด ให้ server หาส่วนต่างเอง
+    // หน่วยหลักไม่ต้องมีแถวซ้ำใน ProductUnitType เลยตัดออกตรงนี้
+    const unitIds = [...selectedUnitIds].filter((unitTypeId) => unitTypeId !== baseId);
 
     // เก็บค่าไว้ก่อนปิด dialog เพราะ state จะถูก seed ใหม่ตอนเปิดครั้งหน้า
     const productName = name.trim();
@@ -143,16 +155,32 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
     // ปิดทันทีไม่รอ server แล้วไปรายงานผลที่ toast
     setOpen(false);
 
-    const fail = (description) =>
+    const fail = (description) => {
+      // ย้อนแถวกลับเป็นของเดิม ไม่ปล่อยให้หน้าจอโชว์ค่าที่บันทึกไม่ติด
+      onUpdated(product);
       toast({
         variant: "destructive",
         title: `บันทึก ${productName} ไม่สำเร็จ`,
         description,
         duration: 0,
       });
+    };
+
+    // ไม่มีรูปรออัปโหลด = รู้ผลลัพธ์ครบแล้ว ทับตารางได้เลยไม่ต้องรอ server
+    // (ถ้ามีรูปรออยู่ URL จริงยังไม่เกิด รอให้อัปเสร็จก่อนค่อยทับทีเดียว)
+    if (!pendingImage) {
+      onUpdated(
+        optimisticProduct(product, unitTypes, {
+          name: productName,
+          imageUrl: typedImageUrl,
+          baseUnitTypeId: baseId,
+          unitIds,
+        })
+      );
+    }
 
     startTransition(async () => {
-      // อัปโหลดรูปก่อนแตะหน่วย ถ้าพลาดจะได้ยังไม่มีอะไรถูกแก้เลย
+      // อัปโหลดรูปก่อน ถ้าพลาดจะได้ยังไม่มีอะไรถูกแก้เลย
       let finalImageUrl = typedImageUrl;
       if (pendingImage) {
         const uploaded = await uploadPendingImage(pendingImage);
@@ -163,47 +191,21 @@ export function EditProductDialog({ product, unitTypes, onUpdated }) {
         finalImageUrl = uploaded.url;
       }
 
-      let failed = null;
-
-      for (const unitTypeId of toAdd) {
-        const result = await addUnitAction(product.id, unitTypeId);
-        if (!result.ok) {
-          failed = result.error;
-          break;
-        }
-      }
-
-      if (!failed) {
-        for (const entryId of toRemove) {
-          const result = await removeUnitAction(entryId);
-          if (!result.ok) {
-            failed = result.error;
-            break;
-          }
-        }
-      }
-
-      // ปิดท้ายด้วย update สินค้า จะได้ product ที่รวมหน่วยล่าสุดกลับมาก้อนเดียว
-      const result = await updateProductAction(
+      // ชื่อ รูป หน่วยหลัก และหน่วยเสริมทั้งชุด จบใน action เดียว/ทรานแซกชันเดียว
+      const result = await saveProductAction(
         product.id,
         productName,
         finalImageUrl,
-        baseId
+        baseId,
+        unitIds
       );
 
       if (!result.ok) {
-        fail(failed ?? result.error);
+        fail(result.error);
         return;
       }
 
-      // เขียนค่าล่าสุดกลับเสมอ ต่อให้บางหน่วยพลาด หน้าจอจะได้ตรงกับ DB
       onUpdated(result.product);
-
-      // แก้สินค้าสำเร็จแต่หน่วยบางตัวไม่ผ่าน ถือว่าไม่ครบ ต้องบอกให้รู้
-      if (failed) {
-        fail(failed);
-        return;
-      }
       toast({ variant: "success", title: `บันทึก ${productName} แล้ว` });
     });
   }

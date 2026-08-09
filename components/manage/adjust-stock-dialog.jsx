@@ -28,13 +28,23 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { adjustStockAction } from "@/app/manage/actions";
 import { allowedStockTypes, canManageProduct } from "@/lib/permissions";
-import { formatBreakdown, productUnits } from "@/lib/stock";
+import { formatBreakdown, productUnits, toBase } from "@/lib/stock";
 
 export const TYPE_OPTIONS = [
   { value: "IN", label: "รับเข้า" },
   { value: "OUT", label: "ตัดออก" },
   { value: "ADJUSTMENT", label: "ตั้งยอดใหม่" },
 ];
+
+/**
+ * ยอดที่จะได้หลังปรับ — สูตรเดียวกับที่ adjustStock() คิดฝั่ง server
+ * ใช้ทับหน้าจอทันทีระหว่างรอ server ตอบ ของจริงมาถึงค่อยทับซ้ำ
+ */
+function nextQty(currentQty, amount, factor, type) {
+  if (type === "IN") return currentQty + toBase(amount, factor);
+  if (type === "OUT") return currentQty - toBase(amount, factor);
+  return toBase(amount, factor);
+}
 
 export function AdjustStockDialog({
   product,
@@ -122,6 +132,12 @@ export function AdjustStockDialog({
     // ถ้าพลาดจริงยังรู้แน่นอนเพราะ toast แบบ destructive ค้างให้อ่าน
     setOpen(false);
 
+    // ขยับยอดในตารางทันที ไม่ต้องรอ round trip — เลขที่คิดตรงกับฝั่ง server
+    onAdjusted({
+      ...product,
+      qty: nextQty(product.qty, parsedAmount, factor, type),
+    });
+
     startTransition(async () => {
       const result = await adjustStockAction(
         product.id,
@@ -132,6 +148,8 @@ export function AdjustStockDialog({
       );
 
       if (!result.ok) {
+        // ยอดที่ทับไว้ไม่ได้เกิดขึ้นจริง ย้อนกลับเป็นของเดิม
+        onAdjusted(product);
         toast({
           variant: "destructive",
           title: `${typeLabel} ${product.name} ไม่สำเร็จ`,

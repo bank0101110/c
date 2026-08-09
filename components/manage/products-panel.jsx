@@ -78,15 +78,27 @@ export function ProductsPanel({
   currentUser,
 }) {
   const [error, setError] = useState(null);
-  const [isPending, startTransition] = useTransition();
+  // ปุ่มลบที่กดไปแล้วเท่านั้นที่ต้องหยุด ไม่ใช่ทั้งตาราง — เดิมใช้ isPending ตัวเดียว
+  // ลบชิ้นเดียวก็ปิดปุ่มลบของทุกแถวไปด้วยจนกว่า server จะตอบ
+  const [deletingIds, setDeletingIds] = useState(() => new Set());
+  const [, startTransition] = useTransition();
 
   function handleCreated(product) {
     setProducts((prev) => [product, ...prev]);
   }
 
   function handleDelete(id) {
+    if (deletingIds.has(id)) return;
+    setDeletingIds((prev) => new Set(prev).add(id));
+
     startTransition(async () => {
       const result = await deleteProductAction(id);
+      setDeletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+
       if (result.ok) {
         setProducts((prev) => prev.filter((product) => product.id !== id));
         setError(null);
@@ -178,7 +190,7 @@ export function ProductsPanel({
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      disabled={isPending}
+                      disabled={deletingIds.has(product.id)}
                       onClick={() => handleDelete(product.id)}
                       aria-label={`ลบ ${product.name}`}
                     >

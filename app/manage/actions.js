@@ -1,12 +1,10 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
-
 import {
     createProduct,
     deleteProduct,
     getProductGuard,
-    updateProduct,
+    saveProduct,
 } from "@/app/server/product"
 import {
     addProductUnit,
@@ -56,11 +54,20 @@ function toCount(value) {
     return Number.isInteger(count) && count >= 0 ? count : null
 }
 
-// หน้าแรกกับหน้าจัดการอ่านสต็อกชุดเดียวกัน
-function revalidateStock() {
-    revalidatePath("/")
-    revalidatePath("/manage")
-}
+/*
+ * ไม่มี revalidatePath ในไฟล์นี้แล้ว — ตั้งใจตัดออก ไม่ใช่ลืม
+ *
+ * ทั้ง "/" และ "/manage" เป็น force-dynamic จึงไม่มี cache ฝั่งเซิร์ฟเวอร์ให้ invalidate
+ * และ Client Cache ก็ไม่เก็บเพจ dynamic อยู่แล้ว (staleTimes.dynamic ดีฟอลต์ = 0)
+ * เดินไปหน้าไหนก็ดึงใหม่ทุกครั้ง
+ *
+ * ผลที่เหลืออยู่จริงของมันคือ Next จะ re-render หน้า /manage ทั้งหน้าแล้วยัด RSC payload
+ * กลับมาใน response ของ action ทุกครั้ง (= requireUser + getProductsByOwner + getUnitTypes
+ * ยิง DB เพิ่มอีกชุด) ทั้งที่ ManageDashboard ถือ state ของตัวเองและโยน payload นั้นทิ้ง
+ * — จ่ายค่า latency กับ re-render ทั้งต้นไม้ฟรี ๆ ซึ่งคืออาการ UI ค้างตอนกดบันทึก
+ *
+ * ทุก action ที่แก้ข้อมูลจึงคืน record ที่อัปเดตแล้วกลับไปแทน ให้ฝั่ง UI เอาไปทับ state เอง
+ */
 
 export async function createProductAction(
     name,
@@ -102,22 +109,37 @@ export async function createProductAction(
     )
     if (!product) return { ok: false, error: "สร้างสินค้าไม่สำเร็จ" }
 
-    revalidateStock()
     return { ok: true, product }
 }
 
-export async function updateProductAction(id, name, imageUrl, baseUnitTypeId) {
+/**
+ * บันทึกสินค้าทั้งก้อนในครั้งเดียว — ชื่อ รูป หน่วยหลัก และชุดหน่วยเสริมทั้งชุด
+ *
+ * เดิมหน้าแก้ไขยิงทีละ action (addUnit × N → removeUnit × M → updateProduct) แต่ Next
+ * dispatch Server Action ทีละตัวต่อ client เสมอ กด Save ครั้งเดียวจึงกลายเป็น N+M+1
+ * รอบไป-กลับที่ต่อคิวกัน แต่ละรอบเช็ค session + เจ้าของ + re-render หน้าใหม่หมด
+ * รวบเป็นรอบเดียวและทรานแซกชันเดียว ทั้งเร็วกว่าและไม่ค้างครึ่ง ๆ ถ้าพังกลางทาง
+ *
+ * extraUnitTypeIds คือหน่วยเสริม "ทั้งชุด" ที่ต้องการหลังบันทึก ไม่ใช่ส่วนต่าง
+ * ฝั่ง UI จึงไม่ต้องถือ ProductUnitType.id ไว้เทียบเอง
+ */
+export async function saveProductAction(id, name, imageUrl, baseUnitTypeId, extraUnitTypeIds = []) {
     const productId = toId(id)
     const trimmed = String(name ?? "").trim()
     const unitTypeId = toId(baseUnitTypeId)
+    const extraIds = toIdList(extraUnitTypeIds)
 
-    const user = await requireUser()
+    // สอง query นี้ไม่ขึ้นต่อกัน ยิงพร้อมกันได้ ประหยัดไป-กลับ DB หนึ่งรอบ
+    const [user, current] = await Promise.all([
+        requireUser(),
+        productId ? getProductGuard(productId) : null,
+    ])
+
     if (!user) return UNAUTHORIZED
     if (!productId) return { ok: false, error: "ไม่พบสินค้า" }
     if (!trimmed) return { ok: false, error: "กรอกชื่อสินค้า" }
     if (!unitTypeId) return { ok: false, error: "เลือกหน่วยหลัก" }
-
-    const current = await getProductGuard(productId)
+    if (extraIds === null) return { ok: false, error: "หน่วยเสริมไม่ถูกต้อง" }
     if (!current) return { ok: false, error: "ไม่พบสินค้า" }
     if (!canManageProduct(current, user)) return FORBIDDEN
 
@@ -135,31 +157,33 @@ export async function updateProductAction(id, name, imageUrl, baseUnitTypeId) {
         }
     }
 
-    const product = await updateProduct(
+    const product = await saveProduct(
         productId,
         trimmed,
         String(imageUrl ?? "").trim() || null,
-        unitTypeId
+        unitTypeId,
+        extraIds
     )
     if (!product) return { ok: false, error: "แก้ไขสินค้าไม่สำเร็จ" }
 
-    revalidateStock()
     return { ok: true, product }
 }
 
 export async function deleteProductAction(id) {
     const productId = toId(id)
-    const user = await requireUser()
+    const [user, current] = await Promise.all([
+        requireUser(),
+        productId ? getProductGuard(productId) : null,
+    ])
+
     if (!user) return UNAUTHORIZED
     if (!productId) return { ok: false, error: "ไม่พบสินค้า" }
-
-    const denied = await checkOwner(productId, user)
-    if (denied) return denied
+    if (!current) return { ok: false, error: "ไม่พบสินค้า" }
+    if (!canManageProduct(current, user)) return FORBIDDEN
 
     const ok = await deleteProduct(productId)
     if (!ok) return { ok: false, error: "ลบสินค้าไม่สำเร็จ" }
 
-    revalidateStock()
     return { ok: true }
 }
 
@@ -176,7 +200,6 @@ export async function addUnitAction(productId, unitTypeId) {
     const unit = await addProductUnit(product, unitType)
     if (!unit) return { ok: false, error: "เพิ่มหน่วยไม่สำเร็จ" }
 
-    revalidateStock()
     return { ok: true, unit }
 }
 
@@ -194,16 +217,20 @@ export async function removeUnitAction(productUnitTypeId) {
     const ok = await removeProductUnit(id)
     if (!ok) return { ok: false, error: "ถอดหน่วยไม่สำเร็จ" }
 
-    revalidateStock()
     return { ok: true }
 }
 
 // ผู้บันทึกมาจาก session เท่านั้น ไม่รับ userId จาก client — ไม่งั้นสวมรอยเป็นคนอื่นได้
 export async function adjustStockAction(productId, unitTypeId, amount, type, note) {
-    const user = await requireUser()
     const product = toId(productId)
     const unitType = toId(unitTypeId)
     const unitAmount = toCount(amount)
+
+    // session กับ owner guard ไม่ขึ้นต่อกัน ยิงพร้อมกันได้
+    const [user, owned] = await Promise.all([
+        requireUser(),
+        product ? getProductGuard(product) : null,
+    ])
 
     if (!user) return UNAUTHORIZED
     if (!product || !unitType) return { ok: false, error: "ข้อมูลไม่ครบ" }
@@ -216,11 +243,10 @@ export async function adjustStockAction(productId, unitTypeId, amount, type, not
     }
 
     // เข้า-ออกใครก็ทำได้ แต่ ADJUSTMENT คือตั้งยอดใหม่ทับของเดิม เลยให้เฉพาะเจ้าของ
-    const owned = await getProductGuard(product)
     if (!owned) return { ok: false, error: "ไม่พบสินค้า" }
     if (!allowedStockTypes(owned, user).includes(type)) return FORBIDDEN
 
-    const result = await adjustStock({
+    return adjustStock({
         userId: user.id,
         productId: product,
         unitTypeId: unitType,
@@ -228,9 +254,6 @@ export async function adjustStockAction(productId, unitTypeId, amount, type, not
         type,
         note: String(note ?? "").trim() || null,
     })
-
-    if (result.ok) revalidateStock()
-    return result
 }
 
 export async function createUnitTypeAction(name, qty) {
@@ -256,7 +279,6 @@ export async function createUnitTypeAction(name, qty) {
     const unitType = await createUnitType(trimmed, factor)
     if (!unitType) return { ok: false, error: "สร้างหน่วยไม่สำเร็จ" }
 
-    revalidateStock()
     return { ok: true, unitType }
 }
 
@@ -265,9 +287,7 @@ export async function deleteUnitTypeAction(id) {
     if (!(await requireUser())) return UNAUTHORIZED
     if (!unitTypeId) return { ok: false, error: "ไม่พบหน่วย" }
 
-    const result = await deleteUnitType(unitTypeId)
-    if (result.ok) revalidateStock()
-    return result
+    return deleteUnitType(unitTypeId)
 }
 
 /**

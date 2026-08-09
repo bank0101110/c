@@ -18,7 +18,11 @@ export function UnitTypesPanel({ unitTypes, setUnitTypes }) {
   const [qty, setQty] = useState("1");
   const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
-  const [isPending, startTransition] = useTransition();
+  // แยกสถานะสร้างกับลบออกจากกัน และลบก็คิดเป็นรายตัว — เดิมใช้ isPending ตัวเดียว
+  // ลบหน่วยเดียวก็ปิดทั้งฟอร์มสร้างและปุ่มลบของทุกแถวไปด้วยจนกว่า server จะตอบ
+  const [isCreating, startCreate] = useTransition();
+  const [deletingIds, setDeletingIds] = useState(() => new Set());
+  const [, startDelete] = useTransition();
 
   const canSubmit = Boolean(name.trim()) && Number(qty) >= 1;
 
@@ -37,7 +41,7 @@ export function UnitTypesPanel({ unitTypes, setUnitTypes }) {
     event.preventDefault();
     if (!canSubmit) return;
 
-    startTransition(async () => {
+    startCreate(async () => {
       const result = await createUnitTypeAction(name.trim(), Number(qty));
       if (!result.ok) {
         setError(result.error);
@@ -51,8 +55,17 @@ export function UnitTypesPanel({ unitTypes, setUnitTypes }) {
   }
 
   function handleDelete(id) {
-    startTransition(async () => {
+    if (deletingIds.has(id)) return;
+    setDeletingIds((prev) => new Set(prev).add(id));
+
+    startDelete(async () => {
       const result = await deleteUnitTypeAction(id);
+      setDeletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+
       if (!result.ok) {
         setError(result.error);
         return;
@@ -80,7 +93,7 @@ export function UnitTypesPanel({ unitTypes, setUnitTypes }) {
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="เช่น ลัง"
-                disabled={isPending}
+                disabled={isCreating}
               />
             </div>
             <div className="flex w-20 flex-col gap-1.5">
@@ -92,11 +105,11 @@ export function UnitTypesPanel({ unitTypes, setUnitTypes }) {
                 step={1}
                 value={qty}
                 onChange={(event) => setQty(event.target.value)}
-                disabled={isPending}
+                disabled={isCreating}
               />
             </div>
           </div>
-          <Button type="submit" size="sm" disabled={isPending || !canSubmit}>
+          <Button type="submit" size="sm" disabled={isCreating || !canSubmit}>
             <Plus />
             เพิ่มหน่วยนับ
           </Button>
@@ -140,7 +153,7 @@ export function UnitTypesPanel({ unitTypes, setUnitTypes }) {
                       variant="ghost"
                       size="icon-sm"
                       onClick={() => handleDelete(unitType.id)}
-                      disabled={isPending}
+                      disabled={deletingIds.has(unitType.id)}
                       aria-label={`ลบ ${unitType.name}`}
                     >
                       <Trash2 />

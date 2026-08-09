@@ -1,6 +1,6 @@
 import { prisma } from "@/prisma/prisma.js"
 
-const productInclude = {
+export const productInclude = {
     baseUnit: true,
     ProductUnitType: { include: { unitType: true }, orderBy: { id: "asc" } },
     // ส่งไปถึง client ด้วย เลยเอาเฉพาะฟิลด์ที่ต้องโชว์ ไม่ลากทั้ง user มา
@@ -103,14 +103,49 @@ export async function createProduct(
     }
 }
 
-export async function updateProduct(id, name, imageUrl, baseUnitTypeId) {
+/**
+ * แก้สินค้า + ปรับหน่วยเสริมให้ตรงกับที่เลือก ในทรานแซกชันเดียว
+ *
+ * extraUnitTypeIds คือชุดหน่วยเสริม "ทั้งหมด" ที่ต้องการหลังบันทึก ไม่ใช่ส่วนต่าง
+ * ฝั่งเรียกจึงไม่ต้องรู้ว่าของเดิมมีอะไร (และไม่ต้องถือ ProductUnitType.id ไว้เอง)
+ * เรียกซ้ำด้วยค่าเดิมกี่ครั้งผลก็เท่าเดิม
+ *
+ * ทำในทรานแซกชันเพราะเดิมเพิ่ม/ถอดหน่วยเป็นคนละ request กัน พังกลางทางแล้วค้างครึ่ง ๆ
+ */
+export async function saveProduct(id, name, imageUrl, baseUnitTypeId, extraUnitTypeIds = []) {
     try {
-        const product = await prisma.product.update({
-            where: { id },
-            data: { name, imageUrl, unitTypeId: baseUnitTypeId },
-            include: productInclude,
+        return await prisma.$transaction(async (tx) => {
+            // หน่วยหลักไม่ต้องมีแถวซ้ำใน ProductUnitType เลยตัดออกจากชุดที่ต้องการ
+            const wanted = new Set(
+                extraUnitTypeIds.filter((unitTypeId) => unitTypeId !== baseUnitTypeId)
+            )
+            const current = await tx.productUnitType.findMany({
+                where: { ProductId: id },
+                select: { id: true, unitTypeId: true },
+            })
+
+            const staleIds = current
+                .filter((entry) => !wanted.has(entry.unitTypeId))
+                .map((entry) => entry.id)
+            const kept = new Set(current.map((entry) => entry.unitTypeId))
+            const newIds = [...wanted].filter((unitTypeId) => !kept.has(unitTypeId))
+
+            if (staleIds.length > 0) {
+                await tx.productUnitType.deleteMany({ where: { id: { in: staleIds } } })
+            }
+            if (newIds.length > 0) {
+                await tx.productUnitType.createMany({
+                    data: newIds.map((unitTypeId) => ({ ProductId: id, unitTypeId })),
+                })
+            }
+
+            // อัปเดตเป็นอย่างสุดท้าย จะได้ product ที่รวมหน่วยล่าสุดกลับไปก้อนเดียว
+            return tx.product.update({
+                where: { id },
+                data: { name, imageUrl, unitTypeId: baseUnitTypeId },
+                include: productInclude,
+            })
         })
-        return product
     } catch (error) {
         console.error(error)
         return null

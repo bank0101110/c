@@ -1,4 +1,5 @@
 import { prisma } from "@/prisma/prisma.js"
+import { productInclude } from "@/app/server/product"
 import { toBase } from "@/lib/stock"
 
 export async function getProductHistory(productId) {
@@ -54,13 +55,12 @@ export async function adjustStock({ userId, productId, unitTypeId, amount, type,
                 return { ok: false, error: "ยอดคงเหลือติดลบไม่ได้" }
             }
 
+            // include ชุดเดียวกับตอนโหลดหน้า ไม่งั้น product ที่ส่งกลับไปแทนที่ของเดิม
+            // จะไม่มี owner ติดมา แล้วแถวนั้นจะเปลี่ยนเป็น "เจ้าของ: ไม่ทราบ" ทันทีที่ตัดสต็อก
             const updated = await tx.product.update({
                 where: { id: productId },
                 data: { qty: newQty },
-                include: {
-                    baseUnit: true,
-                    ProductUnitType: { include: { unitType: true }, orderBy: { id: "asc" } },
-                },
+                include: productInclude,
             })
 
             const productUnitType = product.ProductUnitType.find(
