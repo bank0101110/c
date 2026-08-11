@@ -23,11 +23,7 @@ export default async function Home() {
         <Navbar currentUser={currentUser} showSearch />
         <main className="flex flex-1 flex-col">
           <Hero />
-          <ProductCatalog
-            products={products}
-            categories={categories}
-            currentUser={currentUser}
-          />
+          <ProductCatalog products={products} categories={categories} />
         </main>
         <Footer />
       </div>

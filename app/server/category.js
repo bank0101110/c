@@ -54,6 +54,25 @@ export async function deleteCategory(id) {
 }
 
 /** ย้ายสินค้าเข้าหมวด — categoryId เป็น null คือเอาออกจากหมวด */
+/**
+ * ย้ายหมวดหมู่หลายสินค้าพร้อมกัน — ผ่านการตรวจสิทธิ์รายตัวมาแล้วจาก action
+ *
+ * updateMany ทีเดียวแทนการ loop update เพราะ round trip เดียวจบ
+ * และถ้าพลาดกลางทางจะไม่มีสินค้าบางส่วนถูกย้ายไปแล้วบางส่วนไม่
+ */
+export async function setProductsCategory(productIds, categoryId) {
+    try {
+        const result = await prisma.product.updateMany({
+            where: { id: { in: productIds } },
+            data: { categoryId },
+        })
+        return result.count
+    } catch (error) {
+        console.error(error)
+        return null
+    }
+}
+
 export async function setProductCategory(productId, categoryId) {
     try {
         return await prisma.product.update({

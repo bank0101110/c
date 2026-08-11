@@ -18,10 +18,12 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { SkuCard } from "@/components/product/sku-picker";
-import { AdjustStockDialog } from "@/components/manage/adjust-stock-dialog";
-import { adjustSkuStockBatchAction, setProductCategoryAction } from "@/app/manage/actions";
+import {
+  adjustSkuStockBatchAction,
+  setProductCategoryAction,
+} from "@/app/manage/actions";
 import { allowedStockTypes, canManageProduct } from "@/lib/permissions";
-import { formatBreakdown, productUnits, skuUnits } from "@/lib/stock";
+import { skuUnits } from "@/lib/stock";
 
 // ค่าของ "ไม่มีหมวดหมู่" ใน Select — ใช้ string ว่างไม่ได้ Base UI ถือว่าเป็นยังไม่ได้เลือก
 const NO_CATEGORY = "none";
@@ -87,9 +89,8 @@ export function ProductDetail({
   }
 
   // ห่อ useMemo ไว้ ไม่งั้น ?? [] สร้าง array ใหม่ทุก render แล้ว useMemo ที่กรองด้านล่างพังหมด
+  // สินค้าทุกตัวมีอย่างน้อยหนึ่งตัวเลือกเสมอ (บังคับตั้งแต่ตอนสร้าง) เลยไม่ต้องมีทางสำรอง
   const skus = useMemo(() => product.skus ?? [], [product.skus]);
-  const hasSkus = skus.length > 0;
-  const units = useMemo(() => productUnits(product), [product]);
 
   const availableTypes = useMemo(() => {
     const allowed = allowedStockTypes(product, currentUser);
@@ -163,7 +164,11 @@ export function ProductDetail({
     const count = entries.length;
 
     startTransition(async () => {
-      const result = await adjustSkuStockBatchAction(product.id, entries, note.trim() || null);
+      const result = await adjustSkuStockBatchAction(
+        product.id,
+        entries,
+        note.trim() || null
+      );
 
       if (!result.ok) {
         toast({
@@ -244,7 +249,7 @@ export function ProductDetail({
             ) : (
               <Badge variant="outline">ไม่มีหมวดหมู่</Badge>
             )}
-            {hasSkus && <Badge variant="outline">{skus.length} ตัวเลือก</Badge>}
+            <Badge variant="outline">{skus.length} ตัวเลือก</Badge>
           </div>
 
           <h1 className="text-lg leading-snug font-semibold sm:text-xl">{product.name}</h1>
@@ -252,9 +257,9 @@ export function ProductDetail({
           <div className="flex flex-wrap items-baseline gap-2">
             <span className="text-sm text-muted-foreground">คงเหลือรวม</span>
             <span className="text-2xl font-semibold tabular-nums">{product.qty}</span>
+            {/* ยอดรวมเก็บเป็นหน่วยย่อยที่สุด ซึ่งคือหน่วยหลักของตัวเลือก (ทุกตัวเป็น ×1) */}
             <span className="text-sm text-muted-foreground">
-              {units.at(-1)?.name ?? "หน่วย"}
-              {!hasSkus && units.length > 1 && ` — ${formatBreakdown(product.qty, units)}`}
+              {skus[0]?.baseUnit?.name ?? "หน่วย"}
             </span>
           </div>
 
@@ -263,22 +268,10 @@ export function ProductDetail({
               เจ้าของ: {product.owner.name || product.owner.email}
             </p>
           )}
-
-          {/* สินค้าไม่มีตัวเลือกย่อย = ตัดสต็อกที่ตัวสินค้าเองเหมือนเดิม */}
-          {!hasSkus && (
-            <div className="mt-1">
-              <AdjustStockDialog
-                product={product}
-                currentUser={currentUser}
-                defaultType="OUT"
-                onAdjusted={setProduct}
-              />
-            </div>
-          )}
         </div>
       </div>
 
-      {!hasSkus ? null : !currentUser ? (
+      {!currentUser ? (
         <div className="mt-8 flex flex-col items-start gap-3 rounded-xl border border-dashed p-6">
           <p className="text-sm text-muted-foreground">
             ต้องเข้าสู่ระบบก่อนถึงจะปรับสต็อกได้

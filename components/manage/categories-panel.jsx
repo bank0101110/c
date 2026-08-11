@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
+import { useDeferredValue, useMemo, useState, useTransition } from "react";
+import { Check, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 
 import {
   Card,
@@ -22,6 +22,7 @@ import {
 
 export function CategoriesPanel({ categories, setCategories }) {
   const [name, setName] = useState("");
+  const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editingName, setEditingName] = useState("");
@@ -31,6 +32,14 @@ export function CategoriesPanel({ categories, setCategories }) {
   const [, startMutate] = useTransition();
 
   const sortByName = (list) => [...list].sort((a, b) => a.name.localeCompare(b.name));
+
+  // การกรองหนักกว่าการอัปเดตช่องพิมพ์ ปล่อยให้ตัวอักษรขึ้นจอก่อนแล้วค่อยตามด้วยรายการ
+  const deferredQuery = useDeferredValue(query);
+  const matches = useMemo(() => {
+    const needle = deferredQuery.trim().toLowerCase();
+    if (!needle) return categories;
+    return categories.filter((category) => category.name.toLowerCase().includes(needle));
+  }, [categories, deferredQuery]);
 
   function markBusy(id, busy) {
     setBusyIds((prev) => {
@@ -133,8 +142,36 @@ export function CategoriesPanel({ categories, setCategories }) {
             ยังไม่มีหมวดหมู่
           </p>
         ) : (
+          <>
+            {/* icon เป็น flex item จริง ไม่ใช่ absolute ทับบน input เลยไม่มีทางชนข้อความ */}
+            <div className="flex h-10 items-center gap-2 rounded-lg border border-input bg-transparent px-2.5 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 sm:h-9 dark:bg-input/30">
+              <Search className="size-4 shrink-0 text-muted-foreground" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={`ค้นหาใน ${categories.length} หมวดหมู่`}
+                aria-label="ค้นหาหมวดหมู่"
+                className="min-w-0 flex-1 border-0 bg-transparent p-0 text-base outline-none placeholder:text-muted-foreground md:text-sm"
+              />
+              {query && (
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => setQuery("")}
+                  aria-label="ล้างคำค้นหา"
+                >
+                  <X />
+                </Button>
+              )}
+            </div>
+
+            {matches.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                ไม่พบหมวดหมู่ที่ตรงกับ &ldquo;{deferredQuery.trim()}&rdquo;
+              </p>
+            ) : (
           <ul className="flex flex-col gap-1">
-            {categories.map((category) => {
+            {matches.map((category) => {
               const busy = busyIds.has(category.id);
               const editing = editingId === category.id;
 
@@ -206,6 +243,8 @@ export function CategoriesPanel({ categories, setCategories }) {
               );
             })}
           </ul>
+            )}
+          </>
         )}
       </CardContent>
     </Card>

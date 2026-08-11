@@ -3,6 +3,7 @@
 import {
     createProduct,
     deleteProduct,
+    getProduct,
     getProductGuard,
     saveProduct,
 } from "@/app/server/product"
@@ -19,6 +20,7 @@ import {
     deleteCategory,
     findCategory,
     setProductCategory,
+    setProductsCategory,
     updateCategory,
 } from "@/app/server/category"
 import { getCurrentUser } from "@/app/server/session"
@@ -504,6 +506,34 @@ export async function deleteCategoryAction(id) {
     return deleteCategory(categoryId)
 }
 
+/**
+ * ย้ายหลายสินค้าเข้าหมวดเดียวกันในครั้งเดียว — ส่ง null เพื่อเอาออกจากหมวด
+ *
+ * ตรวจสิทธิ์ทุกตัวก่อนแล้วค่อยเขียน ถ้ามีสักตัวที่ไม่ใช่ของเราจะไม่เขียนอะไรเลย
+ * ดีกว่าย้ายไปครึ่งหนึ่งแล้วค่อยฟ้อง เพราะผู้ใช้จะไม่รู้ว่าตัวไหนสำเร็จบ้าง
+ */
+export async function setProductsCategoryAction(productIds, categoryId) {
+    const ids = toIdList(productIds)
+    const target = categoryId === null || categoryId === "" ? null : toId(categoryId)
+
+    const user = await requireUser()
+    if (!user) return UNAUTHORIZED
+    if (!ids || ids.length === 0) return { ok: false, error: "ยังไม่ได้เลือกสินค้า" }
+    if (categoryId !== null && categoryId !== "" && target === null) {
+        return { ok: false, error: "หมวดหมู่ไม่ถูกต้อง" }
+    }
+
+    const guards = await Promise.all(ids.map((id) => getProductGuard(id)))
+    if (guards.some((product) => !product)) return { ok: false, error: "ไม่พบสินค้าบางรายการ" }
+    if (guards.some((product) => !canManageProduct(product, user))) return FORBIDDEN
+
+    const count = await setProductsCategory(ids, target)
+    if (count === null) return { ok: false, error: "ย้ายหมวดหมู่ไม่สำเร็จ" }
+
+    // ไม่ revalidate ตามหมายเหตุด้านบนของไฟล์ — ฝั่ง UI ทับ state เองจาก ids ที่ส่งมา
+    return { ok: true, count, categoryId: target }
+}
+
 /** ย้ายสินค้าเข้าหมวด — ส่ง null เพื่อเอาออกจากหมวด แก้ได้เฉพาะเจ้าของสินค้า */
 export async function setProductCategoryAction(productId, categoryId) {
     const id = toId(productId)
@@ -523,6 +553,23 @@ export async function setProductCategoryAction(productId, categoryId) {
     if (!updated) return { ok: false, error: "ย้ายหมวดหมู่ไม่สำเร็จ" }
 
     return { ok: true, product: updated }
+}
+
+/**
+ * ตัวเลือกย่อยของสินค้าหนึ่งชิ้น — โหลดตอนเปิดกล่องจัดการตัวเลือกเท่านั้น
+ *
+ * รายการสินค้าในหน้าจัดการตั้งใจไม่ลาก skus มาด้วย (ดู productInclude)
+ * เพราะสินค้าเป็นร้อยรายการ payload จะบวมทั้งที่ตารางใช้แค่จำนวนตัวเลือก
+ */
+export async function getProductSkusAction(productId) {
+    const id = toId(productId)
+    if (!(await requireUser())) return UNAUTHORIZED
+    if (!id) return { ok: false, error: "ไม่พบสินค้า" }
+
+    const product = await getProduct(id)
+    if (!product) return { ok: false, error: "ไม่พบสินค้า" }
+
+    return { ok: true, skus: product.skus ?? [] }
 }
 
 // ประวัติมีชื่อคนบันทึกติดมาด้วย เลยไม่เปิดให้คนนอกอ่าน

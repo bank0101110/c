@@ -92,7 +92,17 @@ export async function getProductGuard(id) {
     }
 }
 
-/** qty ที่รับมาเป็นหน่วยย่อยที่สุด, extraUnitTypeIds = หน่วยเสริมที่สินค้านี้ใช้ได้ */
+/**
+ * สร้างสินค้าพร้อม SKU เริ่มต้นหนึ่งตัวเสมอ
+ *
+ * หน่วยทั้งหมดอยู่ที่ระดับ SKU แล้ว สินค้าที่ไม่มี SKU เลยจะตัดสต็อกไม่ได้
+ * เลยบังคับให้มีอย่างน้อยหนึ่งตัวตั้งแต่ตอนสร้าง — ผู้ใช้ค่อยไปเพิ่มตัวเลือกอื่นทีหลัง
+ *
+ * Product.unitTypeId กับ Product.qty ยังเขียนไว้เหมือนเดิม เพราะเป็นคอลัมน์ NOT NULL
+ * และ syncProductQty() ใช้ qty เป็นยอดรวมของทุก SKU
+ *
+ * qty ที่รับมาเป็นหน่วยย่อยที่สุด, extraUnitTypeIds = หน่วยเสริมของ SKU เริ่มต้น
+ */
 export async function createProduct(
     name,
     imageUrl,
@@ -102,6 +112,10 @@ export async function createProduct(
     ownerId = null
 ) {
     try {
+        const extras = [
+            ...new Set(extraUnitTypeIds.filter((unitTypeId) => unitTypeId !== baseUnitTypeId)),
+        ]
+
         const product = await prisma.product.create({
             data: {
                 name,
@@ -109,10 +123,15 @@ export async function createProduct(
                 qty,
                 unitTypeId: baseUnitTypeId,
                 ownerId,
-                ProductUnitType: {
-                    create: extraUnitTypeIds
-                        .filter((unitTypeId) => unitTypeId !== baseUnitTypeId)
-                        .map((unitTypeId) => ({ unitTypeId })),
+                skus: {
+                    create: {
+                        // ตั้งชื่อตามสินค้าไปก่อน เปลี่ยนทีหลังได้ที่กล่องจัดการตัวเลือก
+                        name,
+                        imageUrl,
+                        qty,
+                        unitTypeId: baseUnitTypeId,
+                        SkuUnitType: { create: extras.map((unitTypeId) => ({ unitTypeId })) },
+                    },
                 },
             },
             include: productInclude,

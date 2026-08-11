@@ -6,7 +6,6 @@ import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
   DialogTrigger,
@@ -19,9 +18,6 @@ import {
 } from "@/components/ui/dialog";
 import {
   Combobox,
-  ComboboxChip,
-  ComboboxChipRemove,
-  ComboboxChips,
   ComboboxClear,
   ComboboxContent,
   ComboboxEmpty,
@@ -30,7 +26,6 @@ import {
   ComboboxItem,
   ComboboxList,
   ComboboxTrigger,
-  ComboboxValue,
 } from "@/components/ui/combobox";
 import { useToast } from "@/components/ui/toast";
 import { ImageField, uploadPendingImage } from "@/components/manage/image-field";
@@ -45,53 +40,38 @@ import {
   unitOptions,
 } from "@/lib/stock";
 
-
+/**
+ * เพิ่มสินค้าใหม่ — ชื่อ รูป หน่วยนับ และยอดเริ่มต้น
+ *
+ * หน่วยที่เลือกตรงนี้เป็นของ "ตัวเลือกเริ่มต้น" ที่ระบบสร้างให้อัตโนมัติหนึ่งตัว
+ * ไม่ใช่หน่วยของตัวสินค้า (สินค้าไม่มีหน่วยของตัวเองแล้ว) ส่วนหน่วยอื่นและตัวเลือกเพิ่มเติม
+ * ไปจัดการต่อที่ปุ่มจัดการตัวเลือกในตารางสินค้า
+ */
 export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [imageUrl, setImageUrl] = useState("");
-  // ไฟล์ที่เลือกไว้แต่ยังไม่ได้อัปโหลด รออัปตอนกดสร้าง
   const [imageFile, setImageFile] = useState(null);
   const [baseUnitTypeId, setBaseUnitTypeId] = useState("");
   const [qty, setQty] = useState("0");
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
 
-  // ฟอร์มสร้างหน่วยใหม่ในตัว ไม่ต้องปิด dialog ไปสร้างที่ panel Unit types ก่อน
+  // สร้างหน่วยใหม่ได้ในตัว ไม่ต้องปิด dialog ไปสร้างที่แท็บหน่วยนับก่อน
   const [showNewUnit, setShowNewUnit] = useState(false);
   const [unitName, setUnitName] = useState("");
   const [unitError, setUnitError] = useState(null);
 
-  // หน่วยเสริมเลือกตอนสร้างได้เลย ไม่ต้องสร้างสินค้าเสร็จแล้วค่อยไปกด Edit
-  const [showExtraUnits, setShowExtraUnits] = useState(false);
-  const [extraUnitIds, setExtraUnitIds] = useState(() => new Set());
-
   const canCreateUnit = Boolean(unitName.trim());
 
-  // หน่วยหลักเก็บยอดเป็นหน่วยย่อยที่สุด เลยเลือกได้เฉพาะหน่วย ×1
-  const baseOptions = useMemo(
-    () => unitOptions(baseUnitTypes(unitTypes)),
-    [unitTypes]
-  );
+  // ยอดเก็บเป็นหน่วยย่อยที่สุด หน่วยเริ่มต้นจึงต้องเป็น ×1
+  const baseOptions = useMemo(() => unitOptions(baseUnitTypes(unitTypes)), [unitTypes]);
   const selectedOption =
     baseOptions.find((option) => String(option.id) === baseUnitTypeId) ?? null;
-
   const baseUnit = unitTypes.find((unitType) => String(unitType.id) === baseUnitTypeId);
 
-  // หน่วยหลักติดมากับสินค้าอยู่แล้ว ไม่ต้องเลือกซ้ำในหน่วยเสริม
-  const extraOptions = useMemo(
-    () =>
-      unitOptions(unitTypes).filter(
-        (option) => String(option.id) !== baseUnitTypeId
-      ),
-    [unitTypes, baseUnitTypeId]
-  );
-  const selectedExtraOptions = useMemo(
-    () => extraOptions.filter((option) => extraUnitIds.has(option.id)),
-    [extraOptions, extraUnitIds]
-  );
-
-  const canSubmit = Boolean(name.trim()) && Boolean(baseUnitTypeId) && Number(qty) >= 0;
+  const canSubmit =
+    Boolean(name.trim()) && Boolean(baseUnitTypeId) && Number(qty) >= 0;
 
   function reset() {
     setName("");
@@ -102,8 +82,6 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
     setShowNewUnit(false);
     setUnitName("");
     setUnitError(null);
-    setShowExtraUnits(false);
-    setExtraUnitIds(new Set());
   }
 
   function handleCreateUnit() {
@@ -129,8 +107,8 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
         setUnitError(result.error);
         return;
       }
+
       setUnitTypes((prev) => sortUnits([...prev, result.unitType]));
-      // เพิ่งสร้างมาก็น่าจะอยากใช้อันนี้ เลยเลือกให้เลย
       setBaseUnitTypeId(String(result.unitType.id));
       setUnitName("");
       setUnitError(null);
@@ -145,32 +123,21 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
     handleCreateUnit();
   }
 
-  function handleExtraUnitsChange(nextOptions) {
-    setExtraUnitIds(new Set(nextOptions.map((option) => option.id)));
-  }
-
   function handleSubmit(event) {
     event.preventDefault();
     if (!canSubmit) return;
-
-    // หน่วยหลักเป็น ×1 เสมอ ยอดที่กรอกจึงเป็นหน่วยย่อยที่สุดอยู่แล้ว
-    const startQty = Number(qty);
-    // เปลี่ยนหน่วยหลักทีหลังอาจทำให้หน่วยเสริมที่เลือกไว้ชนกับหน่วยหลัก เลยกรองอีกที
-    const extraIds = [...extraUnitIds].filter(
-      (unitTypeId) => String(unitTypeId) !== baseUnitTypeId
-    );
 
     // เก็บค่าไว้ก่อนปิด เพราะ reset() จะล้าง state ทิ้งทันที
     const productName = name.trim();
     const pendingImage = imageFile;
     const typedImageUrl = imageUrl.trim() || null;
+    const startQty = Number(qty);
+    const unitId = Number(baseUnitTypeId);
 
-    // ปิดทันทีไม่รอ server แล้วไปรายงานผลที่ toast
     reset();
     setOpen(false);
 
     startTransition(async () => {
-      // อัปโหลดรูปก่อนเป็นอย่างแรก ถ้าพลาดก็ไม่ต้องสร้างสินค้าให้ค้างครึ่ง ๆ กลาง ๆ
       let finalImageUrl = typedImageUrl;
       if (pendingImage) {
         const uploaded = await uploadPendingImage(pendingImage);
@@ -186,12 +153,13 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
         finalImageUrl = uploaded.url;
       }
 
+      // หน่วยเสริมไม่ต้องส่งแล้ว ไปเพิ่มทีหลังที่กล่องจัดการตัวเลือก
       const result = await createProductAction(
         productName,
         finalImageUrl,
-        Number(baseUnitTypeId),
+        unitId,
         startQty,
-        extraIds
+        []
       );
 
       if (!result.ok) {
@@ -223,10 +191,13 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
         <Plus />
         เพิ่มสินค้า
       </DialogTrigger>
+
       <DialogContent>
         <DialogHeader>
           <DialogTitle>เพิ่มสินค้า</DialogTitle>
-          <DialogDescription>ตั้งชื่อสินค้าและเลือกหน่วยหลักที่ใช้นับ</DialogDescription>
+          <DialogDescription>
+            ระบบจะสร้างตัวเลือกเริ่มต้นให้หนึ่งตัว เพิ่มตัวเลือกอื่นได้ทีหลัง
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
@@ -252,7 +223,7 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
 
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between gap-2">
-              <Label>หน่วยหลัก</Label>
+              <Label>หน่วยนับ</Label>
               <Button
                 type="button"
                 variant="ghost"
@@ -285,8 +256,8 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
                 <ComboboxInput
                   placeholder={
                     baseOptions.length === 0
-                      ? "ยังไม่มีหน่วย ×1 — กด New unit type"
-                      : `ค้นหา ${baseOptions.length} หน่วย ×1 — พิมพ์ชื่อหน่วย`
+                      ? "ยังไม่มีหน่วย ×1 — กดสร้างหน่วยใหม่"
+                      : `ค้นหา ${baseOptions.length} หน่วย`
                   }
                 />
                 <ComboboxClear />
@@ -331,85 +302,6 @@ export function NewProductDialog({ unitTypes, setUnitTypes, onCreated }) {
                   เพิ่มหน่วยนับ
                 </Button>
               </div>
-            )}
-          </div>
-
-          <Separator />
-
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <Label>หน่วยอื่น</Label>
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                onClick={() => setShowExtraUnits((prev) => !prev)}
-                disabled={isPending || extraOptions.length === 0}
-              >
-                {showExtraUnits ? <X /> : <Plus />}
-                {showExtraUnits ? "ยกเลิก" : "เพิ่มหน่วยอื่น"}
-              </Button>
-            </div>
-
-            {showExtraUnits &&
-              (extraOptions.length === 0 ? (
-                <p className="text-sm text-muted-foreground">ยังไม่มีหน่วยอื่นให้เลือก</p>
-              ) : (
-                <>
-                  <Combobox
-                    multiple
-                    items={extraOptions}
-                    value={selectedExtraOptions}
-                    onValueChange={handleExtraUnitsChange}
-                    itemToStringLabel={unitOptionLabel}
-                    filter={unitOptionFilter}
-                    isItemEqualToValue={sameUnitOption}
-                    limit={50}
-                    disabled={isPending}
-                  >
-                    <ComboboxInputGroup>
-                      <ComboboxChips>
-                        <ComboboxValue>
-                          {(value) => (
-                            <>
-                              {value.map((option) => (
-                                <ComboboxChip key={option.id} aria-label={option.label}>
-                                  {option.label}
-                                  <ComboboxChipRemove
-                                    aria-label={`Remove ${option.label}`}
-                                  />
-                                </ComboboxChip>
-                              ))}
-                              <ComboboxInput
-                                placeholder={
-                                  value.length > 0
-                                    ? ""
-                                    : `ค้นหา ${extraOptions.length} หน่วย — ชื่อ หรือ "ลัง 20"`
-                                }
-                              />
-                            </>
-                          )}
-                        </ComboboxValue>
-                      </ComboboxChips>
-                    </ComboboxInputGroup>
-                    <ComboboxContent>
-                      <ComboboxEmpty>ไม่พบหน่วยที่ค้นหา</ComboboxEmpty>
-                      <ComboboxList>
-                        {(option) => (
-                          <ComboboxItem key={option.id} value={option}>
-                            {option.label}
-                          </ComboboxItem>
-                        )}
-                      </ComboboxList>
-                    </ComboboxContent>
-                  </Combobox>
-                </>
-              ))}
-
-            {!showExtraUnits && selectedExtraOptions.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                เลือกไว้ {selectedExtraOptions.length} หน่วย
-              </p>
             )}
           </div>
 

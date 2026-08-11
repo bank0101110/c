@@ -7,13 +7,6 @@ import { PackageX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProductCard } from "@/components/landing/product-card";
 import { useSearch } from "@/components/landing/search-context";
-import {
-  AdjustStockDialog,
-  TYPE_OPTIONS,
-} from "@/components/manage/adjust-stock-dialog";
-
-// หน้าแรกให้ตัดเข้า-ออกเท่านั้น ส่วนตั้งยอดใหม่เก็บไว้ที่หน้าจัดการ
-const IN_OUT = TYPE_OPTIONS.filter((option) => option.value !== "ADJUSTMENT");
 
 // ค่าพิเศษของแถบกรอง แยกจาก id หมวดจริงที่เป็นตัวเลข
 const ALL = "all";
@@ -22,10 +15,11 @@ const UNCATEGORIZED = "none";
 // วาดทีละชุด สินค้ามีหลายร้อยรายการ ถ้าวาดหมดในรอบเดียวหน้าจะหนืดตั้งแต่โหลด
 const PAGE_SIZE = 60;
 
-export function ProductCatalog({ products, categories = [], currentUser }) {
+export function ProductCatalog({ products, categories = [] }) {
   // ช่องกรอกย้ายไปอยู่ที่ navbar แล้ว ที่นี่เหลือแค่อ่านคำค้นมากรอง
   const { query, index } = useSearch();
-  const [productList, setProductList] = useState(products);
+  // การปรับสต็อกย้ายไปทำที่หน้าสินค้าแล้ว ที่นี่จึงไม่ต้องถือสำเนารายการไว้แก้เอง
+  const productList = products;
   const [activeCategory, setActiveCategory] = useState(ALL);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const sentinelRef = useRef(null);
@@ -105,12 +99,6 @@ export function ProductCatalog({ products, categories = [], currentUser }) {
     return () => observer.disconnect();
   }, [hasMore, visibleCount]);
 
-  function handleAdjusted(updated) {
-    setProductList((prev) =>
-      prev.map((product) => (product.id === updated.id ? updated : product))
-    );
-  }
-
   return (
     <section id="products" className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6">
       {/* แถบกรองหมวดหมู่ — ขึ้นเฉพาะตอนมีหมวดให้เลือกจริง */}
@@ -162,38 +150,18 @@ export function ProductCatalog({ products, categories = [], currentUser }) {
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
-          {visibleProducts.map((product) =>
-            // สินค้าที่มีตัวเลือกย่อยต้องเข้าหน้าสินค้าไปเลือกทีละตัว dialog เดียวเอาไม่อยู่
-            // ส่วนสินค้าเดี่ยวยังเปิด dialog ตัดสต็อกตรงนี้ได้เหมือนเดิม เร็วกว่าเปลี่ยนหน้า
-            product._count?.skus > 0 ? (
-              <Link
-                key={product.id}
-                href={`/product/${product.id}`}
-                className="rounded-xl text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                aria-label={`ดู ${product.name}`}
-              >
-                <ProductCard product={product} />
-              </Link>
-            ) : (
-              <AdjustStockDialog
-                key={product.id}
-                product={product}
-                currentUser={currentUser}
-                defaultType="OUT"
-                typeOptions={IN_OUT}
-                onAdjusted={handleAdjusted}
-                trigger={
-                  <button
-                    type="button"
-                    className="rounded-xl text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                    aria-label={`ปรับสต็อก ${product.name}`}
-                  />
-                }
-              >
-                <ProductCard product={product} />
-              </AdjustStockDialog>
-            )
-          )}
+          {/* ทุกใบเข้าหน้าสินค้าเหมือนกันหมด สินค้าที่ยังไม่มีตัวเลือกย่อยจะถูกมองเป็น
+              ตัวเลือกเดียวที่หน้านั้น ผู้ใช้เลยไม่เจอสองพฤติกรรมที่ต่างกันโดยไม่รู้ตัว */}
+          {visibleProducts.map((product) => (
+            <Link
+              key={product.id}
+              href={`/product/${product.id}`}
+              className="rounded-xl text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              aria-label={`ดู ${product.name}`}
+            >
+              <ProductCard product={product} />
+            </Link>
+          ))}
         </div>
       )}
 
