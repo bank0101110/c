@@ -50,6 +50,15 @@ export function ProductDetail({
 
   const isOwner = canManageProduct(product, currentUser);
 
+  // เหตุผลเดียวกับหน่วยใน SkuCard — ไม่ส่ง items ปุ่มจะโชว์ id ของหมวดแทนชื่อ
+  const categoryItems = useMemo(
+    () => ({
+      [NO_CATEGORY]: "ไม่มีหมวดหมู่",
+      ...Object.fromEntries(categories.map((c) => [String(c.id), c.name])),
+    }),
+    [categories]
+  );
+
   function handleCategoryChange(value) {
     const categoryId = value === NO_CATEGORY ? null : Number(value);
     const previous = product;
@@ -213,6 +222,7 @@ export function ProductDetail({
             {/* เจ้าของจัดหมวดได้ตรงนี้เลย คนอื่นเห็นเป็นป้ายเฉย ๆ */}
             {isOwner ? (
               <Select
+                items={categoryItems}
                 value={product.categoryId ? String(product.categoryId) : NO_CATEGORY}
                 onValueChange={handleCategoryChange}
                 disabled={savingCategory}

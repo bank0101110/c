@@ -27,6 +27,14 @@ function SearchField({ inputRef, onEscape, className }) {
   const [activeIndex, setActiveIndex] = useState(-1);
   const listId = useId();
 
+  // ตัวแม่ส่ง inputRef มาเฉพาะตอนกางบนมือถือ (เอาไว้โฟกัสให้อัตโนมัติ)
+  // แต่ตรงนี้ต้องเข้าถึง input ให้ได้ทุกกรณีเพื่อสั่ง blur ตอนกด Enter เลยถือ ref ของตัวเองด้วย
+  const fieldRef = useRef(null);
+  const setInputRef = (node) => {
+    fieldRef.current = node;
+    if (inputRef) inputRef.current = node;
+  };
+
   const suggestions = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return [];
@@ -52,10 +60,16 @@ function SearchField({ inputRef, onEscape, className }) {
   // ตัวที่ไฮไลต์ไว้อาจชี้เลยขอบรายการใหม่ เลยหนีบให้อยู่ในช่วงเสมอตอน render
   const activeItem = activeIndex < suggestions.length ? activeIndex : -1;
 
-  function pick(name) {
-    setQuery(name);
+  /** ปิดรายการแนะนำ + ถอนโฟกัส เพื่อให้คีย์บอร์ดมือถือหุบ จะได้เห็นผลลัพธ์เต็มจอ */
+  function dismiss() {
     setIsOpen(false);
     setActiveIndex(-1);
+    fieldRef.current?.blur();
+  }
+
+  function pick(name) {
+    setQuery(name);
+    dismiss();
   }
 
   function handleKeyDown(event) {
@@ -66,6 +80,16 @@ function SearchField({ inputRef, onEscape, className }) {
         return;
       }
       onEscape?.();
+      return;
+    }
+
+    // Enter = "ค้นด้วยคำนี้แหละ" — ต้องปิดรายการแนะนำเสมอ ทั้งบนมือถือและ PC
+    // ไม่ล้างคำค้น เพราะรายการสินค้าด้านล่างกรองตามคำนี้อยู่
+    if (event.key === "Enter") {
+      event.preventDefault();
+      // เลื่อนไฮไลต์ค้างไว้ที่รายการไหน ให้ถือว่าเลือกอันนั้น
+      if (showList && activeItem >= 0) pick(suggestions[activeItem].name);
+      else dismiss();
       return;
     }
 
@@ -80,9 +104,6 @@ function SearchField({ inputRef, onEscape, className }) {
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       setActiveIndex((prev) => (prev <= 0 ? suggestions.length - 1 : prev - 1));
-    } else if (event.key === "Enter" && activeItem >= 0) {
-      event.preventDefault();
-      pick(suggestions[activeItem].name);
     }
   }
 
@@ -91,7 +112,7 @@ function SearchField({ inputRef, onEscape, className }) {
       <div className="relative">
         <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
-          ref={inputRef}
+          ref={setInputRef}
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
@@ -105,6 +126,7 @@ function SearchField({ inputRef, onEscape, className }) {
           onKeyDown={handleKeyDown}
           placeholder={siteConfig.hero.searchPlaceholder}
           aria-label="ค้นหาสินค้า"
+          enterKeyHint="search"
           role="combobox"
           aria-expanded={showList}
           aria-controls={showList ? listId : undefined}

@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { Check, Package } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +24,13 @@ import { thumbnailUrl } from "@/lib/images";
  */
 export function SkuCard({ sku, selected, draft, disabled, type, onToggle, onDraftChange }) {
   const units = skuUnits(sku);
+  // Select ของ Base UI ต้องได้แผนที่ value -> label ถึงจะโชว์ชื่อหน่วยที่เลือกได้
+  // ไม่ส่งมาให้ ปุ่มจะโชว์ค่าดิบซึ่งคือ id ของหน่วย (เช่น "63") แทนที่จะเป็น "ชิ้น (×1)"
+  const unitItems = useMemo(
+    () =>
+      Object.fromEntries(units.map((unit) => [String(unit.id), `${unit.name} (×${unit.qty})`])),
+    [units]
+  );
   const selectedUnit = units.find((unit) => String(unit.id) === draft?.unitTypeId);
   const factor = selectedUnit?.qty ?? 1;
   const smallest = units.at(-1);
@@ -100,6 +108,7 @@ export function SkuCard({ sku, selected, draft, disabled, type, onToggle, onDraf
             onChange={(event) => onDraftChange(sku.id, { amount: event.target.value })}
           />
           <Select
+            items={unitItems}
             value={draft?.unitTypeId ?? ""}
             onValueChange={(value) => onDraftChange(sku.id, { unitTypeId: value })}
             disabled={disabled || units.length <= 1}
