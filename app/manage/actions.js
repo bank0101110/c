@@ -12,7 +12,15 @@ import {
     removeProductUnit,
 } from "@/app/server/productUnitType"
 import { createUnitType, deleteUnitType, findUnitType, getUnitType } from "@/app/server/unitType"
-import { adjustStock, getProductHistory } from "@/app/server/productHistory"
+import { adjustStock, adjustSkuStockBatch, getProductHistory } from "@/app/server/productHistory"
+import { createSku, deleteSku, getSkuGuard, saveSku } from "@/app/server/sku"
+import {
+    createCategory,
+    deleteCategory,
+    findCategory,
+    setProductCategory,
+    updateCategory,
+} from "@/app/server/category"
 import { getCurrentUser } from "@/app/server/session"
 import { allowedStockTypes, canManageProduct } from "@/lib/permissions"
 import { BASE_UNIT_FACTOR } from "@/lib/stock"
@@ -299,6 +307,222 @@ export async function uploadProductImageAction(formData) {
     if (!(formData instanceof FormData)) return { ok: false, error: "ข้อมูลไม่ถูกต้อง" }
 
     return uploadProductImage(formData.get("file"))
+}
+
+/**
+ * ปรับสต็อกหลายตัวเลือก (SKU) ของสินค้าเดียวกัน จบในครั้งเดียว
+ *
+ * entries = [{ skuId, unitTypeId, amount, type }]
+ * ตรวจทุกแถวให้ครบก่อนค่อยส่งเข้า DB — เจอผิดแถวเดียวตีกลับทั้งชุด ไม่บันทึกครึ่ง ๆ
+ */
+export async function adjustSkuStockBatchAction(productId, entries, note) {
+    const id = toId(productId)
+
+    const [user, owned] = await Promise.all([requireUser(), id ? getProductGuard(id) : null])
+
+    if (!user) return UNAUTHORIZED
+    if (!id) return { ok: false, error: "ไม่พบสินค้า" }
+    if (!owned) return { ok: false, error: "ไม่พบสินค้า" }
+    if (!Array.isArray(entries) || entries.length === 0) {
+        return { ok: false, error: "ยังไม่ได้เลือกตัวเลือกที่จะปรับ" }
+    }
+
+    const allowed = allowedStockTypes(owned, user)
+    const cleaned = []
+
+    for (const entry of entries) {
+        const skuId = toId(entry?.skuId)
+        const unitTypeId = toId(entry?.unitTypeId)
+        const amount = toCount(entry?.amount)
+        const type = entry?.type
+
+        if (!skuId || !unitTypeId) return { ok: false, error: "ข้อมูลตัวเลือกไม่ครบ" }
+        if (amount === null) return { ok: false, error: "จำนวนไม่ถูกต้อง" }
+        if (!["IN", "OUT", "ADJUSTMENT"].includes(type)) {
+            return { ok: false, error: "ชนิดรายการไม่ถูกต้อง" }
+        }
+        if (type !== "ADJUSTMENT" && amount === 0) {
+            return { ok: false, error: "จำนวนต้องมากกว่า 0" }
+        }
+        // ตั้งยอดใหม่ทับของเดิมได้เฉพาะเจ้าของ เหมือนกรณีสินค้าไม่มีตัวเลือก
+        if (!allowed.includes(type)) return FORBIDDEN
+
+        cleaned.push({ skuId, unitTypeId, amount, type })
+    }
+
+    return adjustSkuStockBatch({
+        userId: user.id,
+        productId: id,
+        entries: cleaned,
+        note: String(note ?? "").trim() || null,
+    })
+}
+
+export async function createSkuAction(
+    productId,
+    name,
+    imageUrl,
+    unitTypeId,
+    qty = 0,
+    extraUnitTypeIds = [],
+    code = null
+) {
+    const id = toId(productId)
+    const trimmed = String(name ?? "").trim()
+    const baseUnitId = toId(unitTypeId)
+    const startQty = toCount(qty)
+    const extraIds = toIdList(extraUnitTypeIds)
+
+    const user = await requireUser()
+    if (!user) return UNAUTHORIZED
+    if (!id) return { ok: false, error: "ไม่พบสินค้า" }
+    if (!trimmed) return { ok: false, error: "กรอกชื่อตัวเลือก" }
+    if (!baseUnitId) return { ok: false, error: "เลือกหน่วยหลัก" }
+    if (startQty === null) return { ok: false, error: "ยอดเริ่มต้นไม่ถูกต้อง" }
+    if (extraIds === null) return { ok: false, error: "หน่วยเสริมไม่ถูกต้อง" }
+
+    const denied = await checkOwner(id, user)
+    if (denied) return denied
+
+    const baseUnit = await getUnitType(baseUnitId)
+    if (!baseUnit) return { ok: false, error: "ไม่พบหน่วยหลัก" }
+    if (baseUnit.qty !== BASE_UNIT_FACTOR) {
+        return {
+            ok: false,
+            error: `หน่วยหลักต้องเป็นหน่วยย่อยที่สุด (×1) — "${baseUnit.name}" เป็น ×${baseUnit.qty}`,
+        }
+    }
+
+    const sku = await createSku(
+        id,
+        trimmed,
+        String(imageUrl ?? "").trim() || null,
+        baseUnitId,
+        startQty,
+        extraIds,
+        String(code ?? "").trim() || null
+    )
+    if (!sku) return { ok: false, error: "เพิ่มตัวเลือกไม่สำเร็จ (ชื่ออาจซ้ำกับที่มีอยู่)" }
+
+    return { ok: true, sku }
+}
+
+export async function saveSkuAction(skuId, name, imageUrl, unitTypeId, extraUnitTypeIds = [], code = null) {
+    const id = toId(skuId)
+    const trimmed = String(name ?? "").trim()
+    const baseUnitId = toId(unitTypeId)
+    const extraIds = toIdList(extraUnitTypeIds)
+
+    const [user, current] = await Promise.all([requireUser(), id ? getSkuGuard(id) : null])
+
+    if (!user) return UNAUTHORIZED
+    if (!id || !current) return { ok: false, error: "ไม่พบตัวเลือก" }
+    if (!trimmed) return { ok: false, error: "กรอกชื่อตัวเลือก" }
+    if (!baseUnitId) return { ok: false, error: "เลือกหน่วยหลัก" }
+    if (extraIds === null) return { ok: false, error: "หน่วยเสริมไม่ถูกต้อง" }
+    if (!canManageProduct(current.product, user)) return FORBIDDEN
+
+    // เปลี่ยนหน่วยหลักได้เฉพาะเป็น ×1 แต่ถ้าไม่ได้แตะก็ปล่อยผ่าน (เหมือน saveProductAction)
+    if (baseUnitId !== current.unitTypeId) {
+        const baseUnit = await getUnitType(baseUnitId)
+        if (!baseUnit) return { ok: false, error: "ไม่พบหน่วยหลัก" }
+        if (baseUnit.qty !== BASE_UNIT_FACTOR) {
+            return {
+                ok: false,
+                error: `หน่วยหลักต้องเป็นหน่วยย่อยที่สุด (×1) — "${baseUnit.name}" เป็น ×${baseUnit.qty}`,
+            }
+        }
+    }
+
+    const sku = await saveSku(
+        id,
+        trimmed,
+        String(imageUrl ?? "").trim() || null,
+        baseUnitId,
+        extraIds,
+        String(code ?? "").trim() || null
+    )
+    if (!sku) return { ok: false, error: "แก้ตัวเลือกไม่สำเร็จ" }
+
+    return { ok: true, sku }
+}
+
+export async function deleteSkuAction(skuId) {
+    const id = toId(skuId)
+    const [user, current] = await Promise.all([requireUser(), id ? getSkuGuard(id) : null])
+
+    if (!user) return UNAUTHORIZED
+    if (!id || !current) return { ok: false, error: "ไม่พบตัวเลือก" }
+    if (!canManageProduct(current.product, user)) return FORBIDDEN
+
+    const ok = await deleteSku(id)
+    if (!ok) return { ok: false, error: "ลบตัวเลือกไม่สำเร็จ" }
+
+    return { ok: true }
+}
+
+// หมวดหมู่ใช้ร่วมกันทั้งระบบเหมือนหน่วยนับ ใครล็อกอินแล้วก็สร้างได้
+export async function createCategoryAction(name) {
+    const trimmed = String(name ?? "").trim()
+    const user = await requireUser()
+    if (!user) return UNAUTHORIZED
+    if (!trimmed) return { ok: false, error: "กรอกชื่อหมวดหมู่" }
+
+    const existing = await findCategory(trimmed)
+    if (existing) return { ok: false, error: `มีหมวด "${existing.name}" อยู่แล้ว`, existing }
+
+    const category = await createCategory(trimmed, user.id)
+    if (!category) return { ok: false, error: "สร้างหมวดหมู่ไม่สำเร็จ" }
+
+    return { ok: true, category }
+}
+
+export async function updateCategoryAction(id, name) {
+    const categoryId = toId(id)
+    const trimmed = String(name ?? "").trim()
+    if (!(await requireUser())) return UNAUTHORIZED
+    if (!categoryId) return { ok: false, error: "ไม่พบหมวดหมู่" }
+    if (!trimmed) return { ok: false, error: "กรอกชื่อหมวดหมู่" }
+
+    const existing = await findCategory(trimmed)
+    if (existing && existing.id !== categoryId) {
+        return { ok: false, error: `มีหมวด "${existing.name}" อยู่แล้ว` }
+    }
+
+    const category = await updateCategory(categoryId, trimmed)
+    if (!category) return { ok: false, error: "แก้หมวดหมู่ไม่สำเร็จ" }
+
+    return { ok: true, category }
+}
+
+// ลบหมวดแล้วสินค้าไม่หายตาม (categoryId เป็น SetNull) แค่หลุดออกจากหมวด
+export async function deleteCategoryAction(id) {
+    const categoryId = toId(id)
+    if (!(await requireUser())) return UNAUTHORIZED
+    if (!categoryId) return { ok: false, error: "ไม่พบหมวดหมู่" }
+
+    return deleteCategory(categoryId)
+}
+
+/** ย้ายสินค้าเข้าหมวด — ส่ง null เพื่อเอาออกจากหมวด แก้ได้เฉพาะเจ้าของสินค้า */
+export async function setProductCategoryAction(productId, categoryId) {
+    const id = toId(productId)
+    // null = เอาออกจากหมวด ต้องแยกจากค่าที่ส่งมาผิดรูป
+    const target = categoryId === null || categoryId === "" ? null : toId(categoryId)
+
+    const [user, owned] = await Promise.all([requireUser(), id ? getProductGuard(id) : null])
+
+    if (!user) return UNAUTHORIZED
+    if (!id || !owned) return { ok: false, error: "ไม่พบสินค้า" }
+    if (categoryId !== null && categoryId !== "" && target === null) {
+        return { ok: false, error: "หมวดหมู่ไม่ถูกต้อง" }
+    }
+    if (!canManageProduct(owned, user)) return FORBIDDEN
+
+    const updated = await setProductCategory(id, target)
+    if (!updated) return { ok: false, error: "ย้ายหมวดหมู่ไม่สำเร็จ" }
+
+    return { ok: true, product: updated }
 }
 
 // ประวัติมีชื่อคนบันทึกติดมาด้วย เลยไม่เปิดให้คนนอกอ่าน

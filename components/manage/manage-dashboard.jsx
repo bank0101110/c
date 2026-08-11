@@ -4,10 +4,12 @@ import { useState } from "react";
 
 import { ProductsPanel } from "@/components/manage/products-panel";
 import { UnitTypesPanel } from "@/components/manage/unit-types-panel";
+import { CategoriesPanel } from "@/components/manage/categories-panel";
 
-export function ManageDashboard({ products, unitTypes, currentUser }) {
+export function ManageDashboard({ products, unitTypes, categories, currentUser }) {
   const [productList, setProductList] = useState(products);
   const [unitTypeList, setUnitTypeList] = useState(unitTypes);
+  const [categoryList, setCategoryList] = useState(categories);
 
   return (
     <div className="flex flex-col gap-6">
@@ -30,6 +32,7 @@ export function ManageDashboard({ products, unitTypes, currentUser }) {
         </div>
 
         <div className="flex flex-col gap-6">
+          <CategoriesPanel categories={categoryList} setCategories={setCategoryList} />
           <UnitTypesPanel unitTypes={unitTypeList} setUnitTypes={setUnitTypeList} />
         </div>
       </div>

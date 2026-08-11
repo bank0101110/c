@@ -205,7 +205,7 @@ export function AdjustStockDialog({
             <p className="text-sm text-muted-foreground">
               ต้องเข้าสู่ระบบก่อนถึงจะปรับสต็อกได้
             </p>
-            <Button render={<Link href="/login" />}>
+            <Button nativeButton={false} render={<Link href="/login" />}>
               <LogIn />
               เข้าสู่ระบบ
             </Button>

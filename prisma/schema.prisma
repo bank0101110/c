@@ -21,10 +21,65 @@ model Product {
   // null = ของเก่าที่สร้างก่อนมีระบบเจ้าของ, ลบ user แล้วสินค้าต้องไม่หายตามไปด้วย
   ownerId String?
   owner User? @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  // หมวดหมู่ไม่บังคับ — สินค้าที่ยังไม่จัดหมวดจะขึ้นกลุ่ม "ไม่มีหมวดหมู่"
+  // ลบหมวดแล้วสินค้าต้องไม่หายตาม เลยเป็น SetNull
+  categoryId Int?
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   ProductUnitType ProductUnitType[]
   ProductHistory ProductHistory[]
+  // สินค้าที่มี SKU จะตัดสต็อกที่ระดับ SKU แทน ส่วน Product.qty เป็นยอดรวมที่คิดจาก SKU
+  // สินค้าที่ไม่มี SKU ใช้ Product.qty กับ baseUnit ของตัวเองเหมือนเดิม
+  skus Sku[]
 
   @@index([ownerId])
+  @@index([categoryId])
+}
+
+/// หมวดหมู่สินค้า — ผู้ใช้จัดเอง สินค้าจะไม่มีหมวดก็ได้
+model Category {
+  id Int @id @default(autoincrement())
+  name String
+  ownerId String?
+  owner User? @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  products Product[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name])
+  @@index([ownerId])
+}
+
+/// ตัวเลือกย่อยของสินค้า (สี/ขนาด/รุ่น) — แต่ละตัวถือสต็อกและหน่วยของตัวเอง
+/// เพราะจำนวนต่อหน่วยของแต่ละตัวเลือกไม่เท่ากัน เช่น ถุง 6x9 กับ 12x20 คนละขนาดกัน
+model Sku {
+  id Int @id @default(autoincrement())
+  productId Int
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name String                  // ชื่อตัวเลือก เช่น "6x14 นิ้ว"
+  code String?                 // รหัส SKU ของผู้ขาย (ถ้ามี)
+  imageUrl String?
+  qty Int @default(0)          // ยอดคงเหลือ เก็บเป็นหน่วยย่อยที่สุด เหมือน Product.qty
+  baseUnit UnitType @relation(fields: [unitTypeId], references: [id])
+  unitTypeId Int               // หน่วยหลักของตัวเลือกนี้ ต้องเป็น ×1
+  SkuUnitType SkuUnitType[]
+  ProductHistory ProductHistory[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ชื่อตัวเลือกห้ามซ้ำภายในสินค้าเดียวกัน กันสับสนตอนเลือกปรับสต็อก
+  @@unique([productId, name])
+  @@index([productId])
+}
+
+/// หน่วยเสริมของ SKU — โครงเดียวกับ ProductUnitType แต่ผูกกับตัวเลือกย่อย
+model SkuUnitType {
+  id Int @id @default(autoincrement())
+  skuId Int
+  sku Sku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  unitTypeId Int
+  unitType UnitType @relation(fields: [unitTypeId], references: [id])
+
+  @@unique([skuId, unitTypeId])
 }
 model UnitType{
   id Int @id @default(autoincrement())
@@ -32,6 +87,8 @@ model UnitType{
   qty Int @default(1)          // 1 หน่วยนี้ = กี่หน่วยย่อย เช่น ลัง = 12
   products Product[]
   productUnitType ProductUnitType[]
+  skus Sku[]
+  skuUnitType SkuUnitType[]
 
   @@map("QtyType")
 }
@@ -61,6 +118,7 @@ model User {
   accounts      Account[]
   ProductHistory ProductHistory[]
   products      Product[]
+  categories    Category[]
 
   @@unique([email])
   @@map("user")
@@ -121,6 +179,9 @@ model ProductHistory{
   user User @relation(fields: [userId],references: [id])
   productId Int
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  // รายการที่ตัดสต็อกของตัวเลือกย่อย จะผูก skuId ไว้ด้วย ส่วนสินค้าที่ไม่มี SKU เป็น null
+  skuId Int?
+  sku Sku? @relation(fields: [skuId], references: [id], onDelete: Cascade)
   productUnitTypeId Int? @map("productQtyTypeId")
   productUnitType   ProductUnitType? @relation(fields: [productUnitTypeId], references: [id], onDelete: SetNull)
   unitName      String      // ชื่อหน่วยตอนที่บันทึก (กันหน่วยถูกลบ/แก้ทีหลัง)

@@ -37,7 +37,7 @@ export function UserMenu({ user }) {
 
   if (!user) {
     return (
-      <Button size="sm" variant="outline" render={<Link href="/login" />}>
+      <Button size="sm" variant="outline" nativeButton={false} render={<Link href="/login" />}>
         <LogIn />
         เข้าสู่ระบบ
       </Button>

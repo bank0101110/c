@@ -22,7 +22,7 @@ function splitMatch(name, query) {
  * แยกออกมาเป็นตัวเดียวเพื่อไม่ต้องเขียนตรรกะ autocomplete ซ้ำสองที่
  */
 function SearchField({ inputRef, onEscape, className }) {
-  const { query, setQuery, products } = useSearch();
+  const { query, setQuery, index } = useSearch();
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const listId = useId();
@@ -31,18 +31,20 @@ function SearchField({ inputRef, onEscape, className }) {
     const needle = query.trim().toLowerCase();
     if (!needle) return [];
 
-    const matched = products.filter((product) =>
-      product.name.toLowerCase().includes(needle)
-    );
-    // ชื่อที่ "ขึ้นต้น" ด้วยคำค้นมักใช่กว่า เลยดันขึ้นก่อนตัวที่แค่มีคำนั้นอยู่กลางชื่อ
-    matched.sort((a, b) => {
-      const aStarts = a.name.toLowerCase().startsWith(needle);
-      const bStarts = b.name.toLowerCase().startsWith(needle);
-      if (aStarts !== bStarts) return aStarts ? -1 : 1;
-      return a.name.localeCompare(b.name, "th");
-    });
-    return matched.slice(0, MAX_SUGGESTIONS);
-  }, [products, query]);
+    // เก็บแค่ที่ขึ้นต้นด้วยคำค้นให้ครบโควตาก่อน แล้วค่อยเติมด้วยตัวที่เจอกลางชื่อ
+    // ทำแบบนี้แทน filter ทั้งหมดแล้ว sort — เดิมเรียง array ที่อาจยาวหลายร้อยรายการ
+    // ทุกครั้งที่พิมพ์ ทั้งที่สุดท้ายใช้แค่ 6 ตัวแรก
+    const starts = [];
+    const contains = [];
+
+    for (const entry of index) {
+      if (entry.lower.startsWith(needle)) starts.push(entry.product);
+      else if (entry.lower.includes(needle)) contains.push(entry.product);
+      if (starts.length >= MAX_SUGGESTIONS) break;
+    }
+
+    return [...starts, ...contains].slice(0, MAX_SUGGESTIONS);
+  }, [index, query]);
 
   const showList = isOpen && suggestions.length > 0;
 

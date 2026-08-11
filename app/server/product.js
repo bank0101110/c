@@ -1,10 +1,31 @@
 import { prisma } from "@/prisma/prisma.js"
 
+/**
+ * ชุดฟิลด์สำหรับ "รายการสินค้า" (หน้าแรก/หน้าจัดการ) — ตั้งใจไม่ลาก skus ทั้งก้อนมา
+ *
+ * หน้าแรกโหลดสินค้าเป็นร้อยรายการ ถ้า include skus เต็ม ๆ ทุกตัว payload จะบวมมาก
+ * ทั้งที่การ์ดใช้แค่ยอดรวม (Product.qty ที่ sync ไว้แล้ว) กับจำนวนตัวเลือก
+ * รายละเอียด SKU ค่อยดึงตอนเข้าหน้าสินค้าด้วย getProduct()
+ */
 export const productInclude = {
     baseUnit: true,
     ProductUnitType: { include: { unitType: true }, orderBy: { id: "asc" } },
     // ส่งไปถึง client ด้วย เลยเอาเฉพาะฟิลด์ที่ต้องโชว์ ไม่ลากทั้ง user มา
     owner: { select: { id: true, name: true, email: true, image: true } },
+    category: { select: { id: true, name: true } },
+    _count: { select: { skus: true } },
+}
+
+/** ชุดเต็มสำหรับหน้าสินค้าเดี่ยว — มี SKU พร้อมหน่วยของแต่ละตัว */
+export const productDetailInclude = {
+    ...productInclude,
+    skus: {
+        orderBy: { id: "asc" },
+        include: {
+            baseUnit: true,
+            SkuUnitType: { include: { unitType: true }, orderBy: { id: "asc" } },
+        },
+    },
 }
 
 export async function getProducts() {
@@ -48,7 +69,7 @@ export async function getProduct(id) {
     try {
         const product = await prisma.product.findUnique({
             where: { id },
-            include: productInclude,
+            include: productDetailInclude,
         })
         return product
     } catch (error) {
