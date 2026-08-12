@@ -381,7 +381,8 @@ export function ProductsPanel({
             {matches.map((product) => (
               <div
                 key={product.id}
-                className={`group grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1.5 border-b border-border py-3 transition-colors last:border-0 sm:items-center sm:rounded-lg sm:hover:bg-muted/60 ${COLUMNS}`}
+                // มือถือเหลือ 2 คอลัมน์ ปุ่มย้ายลงบรรทัดล่างสุด ชื่อสินค้าจะได้ความกว้างจริง ๆ
+                className={`group grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-1.5 border-b border-border py-3 transition-colors last:border-0 sm:items-center sm:rounded-lg sm:hover:bg-muted/60 ${COLUMNS}`}
               >
                 {/* checkbox อยู่ในเซลล์เดียวกับรูป จะได้ไม่ต้องรื้อ grid ทั้งตาราง */}
                 <div className="col-start-1 row-span-3 row-start-1 flex items-center gap-2 sm:row-span-1">
@@ -399,7 +400,10 @@ export function ProductsPanel({
                 </div>
 
                 <div className="col-start-2 row-start-1 flex min-w-0 flex-col">
-                  <span className="truncate font-medium">{product.name}</span>
+                  {/* มือถือมีที่พอให้อ่านสองบรรทัด จอกว้างบีบเหลือบรรทัดเดียวให้ตารางไม่สูงเกิน */}
+                  <span className="line-clamp-2 font-medium sm:truncate">
+                    {product.name}
+                  </span>
                   <span className="truncate text-xs text-muted-foreground">
                     {product.category?.name ?? "ไม่มีหมวดหมู่"}
                   </span>
@@ -417,7 +421,7 @@ export function ProductsPanel({
                   <StockCell product={product} />
                 </div>
 
-                <div className="col-start-3 row-span-3 row-start-1 justify-self-end sm:col-start-5 sm:row-span-1">
+                <div className="col-start-2 row-start-4 justify-self-end sm:col-start-5 sm:row-span-1 sm:row-start-1">
                   <ProductRowActions
                     product={product}
                     unitTypes={unitTypes}

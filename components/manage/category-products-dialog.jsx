@@ -77,11 +77,12 @@ export function CategoryProductsDialog({
               // ปุ่มแก้ไขต้องอยู่นอก <Link> ไม่งั้นกดแก้ไขแล้วเด้งไปหน้าสินค้าด้วย
               <li
                 key={product.id}
-                className="flex items-center gap-2 rounded-lg border border-border p-2 transition-colors hover:bg-muted/60"
+                // มือถือให้ชื่อกินเต็มบรรทัดแรก แล้วปุ่มตกลงบรรทัดล่าง ไม่งั้นชื่อเหลือที่ไม่กี่สิบพิกเซล
+                className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-2 transition-colors hover:bg-muted/60"
               >
                 <Link
                   href={`/product/${product.id}`}
-                  className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                  className="flex min-w-0 flex-1 basis-full items-center gap-2.5 rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:basis-auto"
                 >
                   <div className="size-10 shrink-0 overflow-hidden rounded-md bg-muted">
                     {product.imageUrl ? (
