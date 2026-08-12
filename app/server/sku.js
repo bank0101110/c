@@ -52,6 +52,39 @@ export async function createSku(productId, name, imageUrl, unitTypeId, qty = 0, 
  * extraUnitTypeIds คือชุดหน่วยเสริม "ทั้งหมด" ที่ต้องการหลังบันทึก ไม่ใช่ส่วนต่าง
  * (โครงเดียวกับ saveProduct เพื่อให้ฝั่ง UI ใช้รูปแบบเดิม)
  */
+/**
+ * ตั้งหน่วยให้หลายตัวเลือกพร้อมกัน — แตะเฉพาะหน่วย ไม่ยุ่งชื่อ/รหัส/รูป
+ *
+ * แยกจาก saveSku() เพราะการแก้หมู่ต้องคงข้อมูลเฉพาะตัวของแต่ละ SKU ไว้
+ * ถ้าใช้ saveSku วนลูปจะต้องส่งชื่อไปด้วยทุกครั้ง เสี่ยงเขียนทับชื่อกันเอง
+ *
+ * ทำในทรานแซกชันเดียว ถ้าพลาดกลางทางจะไม่มีบางตัวเปลี่ยนบางตัวไม่เปลี่ยน
+ */
+export async function setSkusUnits(skuIds, unitTypeId, extraUnitTypeIds = []) {
+    try {
+        return await prisma.$transaction(async (tx) => {
+            const wanted = [...new Set(extraUnitTypeIds.filter((id) => id !== unitTypeId))]
+
+            // ล้างหน่วยเสริมเดิมของทุกตัวแล้วใส่ชุดใหม่ ง่ายกว่าไล่หาส่วนต่างทีละตัว
+            await tx.skuUnitType.deleteMany({ where: { skuId: { in: skuIds } } })
+            if (wanted.length > 0) {
+                await tx.skuUnitType.createMany({
+                    data: skuIds.flatMap((skuId) =>
+                        wanted.map((unitId) => ({ skuId, unitTypeId: unitId }))
+                    ),
+                })
+            }
+
+            await tx.sku.updateMany({ where: { id: { in: skuIds } }, data: { unitTypeId } })
+
+            return tx.sku.findMany({ where: { id: { in: skuIds } }, include: skuInclude })
+        })
+    } catch (error) {
+        console.error(error)
+        return null
+    }
+}
+
 export async function saveSku(id, name, imageUrl, unitTypeId, extraUnitTypeIds = [], code = null) {
     try {
         return await prisma.$transaction(async (tx) => {

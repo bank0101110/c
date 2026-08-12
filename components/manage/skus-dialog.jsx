@@ -5,6 +5,7 @@ import { Layers, Package, Pencil, Plus, Trash2, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -24,6 +25,7 @@ import {
   deleteSkuAction,
   getProductSkusAction,
   saveSkuAction,
+  setSkusUnitsAction,
 } from "@/app/manage/actions";
 import {
   Combobox,
@@ -66,11 +68,21 @@ function emptyDraft(baseOptions) {
   };
 }
 
-function SkuRow({ sku, onEdit, onDelete, busy }) {
+function SkuRow({ sku, onEdit, onDelete, busy, selected, onToggle }) {
   const units = skuUnits(sku);
 
   return (
-    <div className="flex items-center gap-2.5 rounded-lg border border-border p-2">
+    <div
+      className={`flex items-center gap-2.5 rounded-lg border p-2 transition-colors ${
+        selected ? "border-primary bg-primary/5" : "border-border"
+      }`}
+    >
+      <Checkbox
+        checked={selected}
+        onCheckedChange={() => onToggle(sku.id)}
+        disabled={busy}
+        aria-label={`เลือก ${sku.name}`}
+      />
       <div className="size-11 shrink-0 overflow-hidden rounded-md bg-muted">
         {sku.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -138,6 +150,10 @@ export function SkusDialog({ product, unitTypes, onCountChange }) {
   const [open, setOpen] = useState(false);
   const [skus, setSkus] = useState(null); // null = ยังไม่ได้โหลด
   const [draft, setDraft] = useState(null); // null = ยังไม่ได้เปิดฟอร์ม
+  // ติ๊กไว้เพื่อแก้หน่วยพร้อมกันหลายตัว — ชื่อ/รหัส/รูป เป็นของเฉพาะตัว แก้หมู่ไม่ได้
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkUnitId, setBulkUnitId] = useState("");
+  const [bulkExtraIds, setBulkExtraIds] = useState(() => new Set());
   const [busy, startTransition] = useTransition();
   const { toast } = useToast();
 
@@ -170,6 +186,56 @@ export function SkusDialog({ product, unitTypes, onCountChange }) {
         return;
       }
       setSkus(result.skus);
+    });
+  }
+
+  function toggleOne(id) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const allSelected = skus !== null && skus.length > 0 && selectedIds.size === skus.length;
+
+  function toggleAll() {
+    setSelectedIds(allSelected ? new Set() : new Set((skus ?? []).map((s) => s.id)));
+  }
+
+  // หน่วยเสริมของแถบแก้หมู่ ต้องไม่ให้เลือกหน่วยหลักซ้ำเข้าไปด้วย
+  const bulkExtraOptions = useMemo(
+    () => unitOptions(unitTypes).filter((option) => String(option.id) !== bulkUnitId),
+    [unitTypes, bulkUnitId]
+  );
+  const bulkSelectedExtras = useMemo(
+    () => bulkExtraOptions.filter((option) => bulkExtraIds.has(option.id)),
+    [bulkExtraOptions, bulkExtraIds]
+  );
+  const bulkSelectedBase =
+    baseUnitOptions.find((option) => String(option.id) === bulkUnitId) ?? null;
+
+  function applyBulkUnits() {
+    if (selectedIds.size === 0 || !bulkUnitId) return;
+
+    const ids = [...selectedIds];
+    startTransition(async () => {
+      const result = await setSkusUnitsAction(ids, Number(bulkUnitId), [...bulkExtraIds]);
+      if (!result.ok) {
+        toast({
+          variant: "destructive",
+          title: "ตั้งหน่วยไม่สำเร็จ",
+          description: result.error,
+          duration: 0,
+        });
+        return;
+      }
+
+      const updated = new Map(result.skus.map((sku) => [sku.id, sku]));
+      setSkus((prev) => (prev ?? []).map((sku) => updated.get(sku.id) ?? sku));
+      setSelectedIds(new Set());
+      toast({ variant: "success", title: `ตั้งหน่วยให้ ${result.skus.length} ตัวเลือกแล้ว` });
     });
   }
 
@@ -315,6 +381,133 @@ export function SkusDialog({ product, unitTypes, onCountChange }) {
           </DialogDescription>
         </DialogHeader>
 
+        {skus !== null && skus.length > 0 && (
+          <div className="flex items-center gap-2 border-b border-border pb-2">
+            <Checkbox
+              checked={allSelected}
+              indeterminate={selectedIds.size > 0 && !allSelected}
+              onCheckedChange={toggleAll}
+              disabled={busy}
+              aria-label="เลือกตัวเลือกทั้งหมด"
+            />
+            <span className="text-xs text-muted-foreground">
+              {selectedIds.size > 0 ? `เลือกไว้ ${selectedIds.size}` : "เลือกทั้งหมด"}
+            </span>
+          </div>
+        )}
+
+        {/* แถบแก้หน่วยพร้อมกันหลายตัว — โผล่เมื่อติ๊กไว้อย่างน้อยหนึ่ง */}
+        {selectedIds.size > 0 && (
+          <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/50 p-2.5">
+            <p className="text-xs font-medium">
+              ตั้งหน่วยให้ {selectedIds.size} ตัวเลือกที่เลือกไว้
+            </p>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Combobox
+                items={baseUnitOptions}
+                value={bulkSelectedBase}
+                onValueChange={(option) => {
+                  setBulkUnitId(option ? String(option.id) : "");
+                  // หน่วยหลักตัวใหม่ต้องไม่ค้างอยู่ในหน่วยเสริมด้วย
+                  if (option) {
+                    setBulkExtraIds((prev) => {
+                      const next = new Set(prev);
+                      next.delete(option.id);
+                      return next;
+                    });
+                  }
+                }}
+                itemToStringLabel={unitOptionLabel}
+                filter={unitOptionFilter}
+                isItemEqualToValue={sameUnitOption}
+                limit={50}
+                autoHighlight
+                disabled={busy}
+              >
+                <ComboboxInputGroup>
+                  <ComboboxInput placeholder="หน่วยหลัก (×1)" />
+                  <ComboboxClear />
+                  <ComboboxTrigger />
+                </ComboboxInputGroup>
+                <ComboboxContent>
+                  <ComboboxEmpty>ไม่พบหน่วยที่ค้นหา</ComboboxEmpty>
+                  <ComboboxList>
+                    {(option) => (
+                      <ComboboxItem key={option.id} value={option}>
+                        {option.label}
+                      </ComboboxItem>
+                    )}
+                  </ComboboxList>
+                </ComboboxContent>
+              </Combobox>
+
+              <Combobox
+                multiple
+                items={bulkExtraOptions}
+                value={bulkSelectedExtras}
+                onValueChange={(options) =>
+                  setBulkExtraIds(new Set(options.map((option) => option.id)))
+                }
+                itemToStringLabel={unitOptionLabel}
+                filter={unitOptionFilter}
+                isItemEqualToValue={sameUnitOption}
+                limit={50}
+                disabled={busy}
+              >
+                <ComboboxInputGroup>
+                  <ComboboxChips>
+                    <ComboboxValue>
+                      {(value) => (
+                        <>
+                          {value.map((option) => (
+                            <ComboboxChip key={option.id} aria-label={option.label}>
+                              {option.label}
+                              <ComboboxChipRemove aria-label={`เอา ${option.label} ออก`} />
+                            </ComboboxChip>
+                          ))}
+                          <ComboboxInput
+                            placeholder={value.length > 0 ? "" : "หน่วยอื่น (ไม่บังคับ)"}
+                          />
+                        </>
+                      )}
+                    </ComboboxValue>
+                  </ComboboxChips>
+                </ComboboxInputGroup>
+                <ComboboxContent>
+                  <ComboboxEmpty>ไม่พบหน่วยที่ค้นหา</ComboboxEmpty>
+                  <ComboboxList>
+                    {(option) => (
+                      <ComboboxItem key={option.id} value={option}>
+                        {option.label}
+                      </ComboboxItem>
+                    )}
+                  </ComboboxList>
+                </ComboboxContent>
+              </Combobox>
+            </div>
+
+            <div className="flex gap-2">
+              <Button size="sm" onClick={applyBulkUnits} disabled={busy || !bulkUnitId}>
+                ตั้งหน่วยให้ทั้งหมด
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSelectedIds(new Set())}
+                disabled={busy}
+              >
+                <X />
+                ล้างที่เลือก
+              </Button>
+            </div>
+
+            <p className="text-[0.7rem] text-muted-foreground">
+              แก้ได้เฉพาะหน่วย — ชื่อ รหัส และรูป เป็นของเฉพาะตัว ต้องแก้ทีละอัน
+            </p>
+          </div>
+        )}
+
         {/* จอกว้างวางสองคอลัมน์ ไม่งั้นการ์ดยืดเต็มความกว้างแล้วเหลือที่ว่างข้างในเยอะ */}
         <div className="grid max-h-[60vh] grid-cols-1 gap-2.5 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
           {skus === null ? (
@@ -332,6 +525,8 @@ export function SkusDialog({ product, unitTypes, onCountChange }) {
                 key={sku.id}
                 sku={sku}
                 busy={busy}
+                selected={selectedIds.has(sku.id)}
+                onToggle={toggleOne}
                 onEdit={startEdit}
                 onDelete={handleDelete}
               />

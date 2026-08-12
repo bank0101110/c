@@ -14,7 +14,7 @@ import {
 } from "@/app/server/productUnitType"
 import { createUnitType, deleteUnitType, findUnitType, getUnitType } from "@/app/server/unitType"
 import { adjustStock, adjustSkuStockBatch, getProductHistory } from "@/app/server/productHistory"
-import { createSku, deleteSku, getSkuGuard, saveSku } from "@/app/server/sku"
+import { createSku, deleteSku, getSkuGuard, saveSku, setSkusUnits } from "@/app/server/sku"
 import {
     createCategory,
     deleteCategory,
@@ -447,6 +447,45 @@ export async function saveSkuAction(skuId, name, imageUrl, unitTypeId, extraUnit
     if (!sku) return { ok: false, error: "แก้ตัวเลือกไม่สำเร็จ" }
 
     return { ok: true, sku }
+}
+
+/**
+ * ตั้งหน่วยให้หลายตัวเลือกพร้อมกัน — ใช้ตอนแก้หน่วยเหมือนกันทีละหลายตัว
+ *
+ * ตรวจสิทธิ์ทุกตัวก่อนแล้วค่อยเขียน ถ้ามีสักตัวที่ไม่ใช่ของเราจะไม่เขียนอะไรเลย
+ * และทุกตัวต้องอยู่สินค้าเดียวกัน กันการยิงข้ามสินค้าจากนอก UI
+ */
+export async function setSkusUnitsAction(skuIds, unitTypeId, extraUnitTypeIds = []) {
+    const ids = toIdList(skuIds)
+    const baseUnitId = toId(unitTypeId)
+    const extraIds = toIdList(extraUnitTypeIds)
+
+    const user = await requireUser()
+    if (!user) return UNAUTHORIZED
+    if (!ids || ids.length === 0) return { ok: false, error: "ยังไม่ได้เลือกตัวเลือก" }
+    if (!baseUnitId) return { ok: false, error: "เลือกหน่วยหลัก" }
+    if (!extraIds) return { ok: false, error: "หน่วยเสริมไม่ถูกต้อง" }
+
+    const baseUnit = await getUnitType(baseUnitId)
+    if (!baseUnit) return { ok: false, error: "ไม่พบหน่วยหลัก" }
+    if (baseUnit.qty !== BASE_UNIT_FACTOR) {
+        return {
+            ok: false,
+            error: `หน่วยหลักต้องเป็นหน่วยย่อยที่สุด (×1) — "${baseUnit.name}" เป็น ×${baseUnit.qty}`,
+        }
+    }
+
+    const guards = await Promise.all(ids.map((id) => getSkuGuard(id)))
+    if (guards.some((sku) => !sku)) return { ok: false, error: "ไม่พบตัวเลือกบางรายการ" }
+    if (guards.some((sku) => !canManageProduct(sku.product, user))) return FORBIDDEN
+    if (new Set(guards.map((sku) => sku.productId)).size > 1) {
+        return { ok: false, error: "ตัวเลือกต้องอยู่สินค้าเดียวกัน" }
+    }
+
+    const skus = await setSkusUnits(ids, baseUnitId, extraIds)
+    if (!skus) return { ok: false, error: "ตั้งหน่วยไม่สำเร็จ" }
+
+    return { ok: true, skus }
 }
 
 export async function deleteSkuAction(skuId) {

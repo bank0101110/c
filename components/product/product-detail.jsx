@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, LogIn, Package, Search, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -46,11 +47,25 @@ export function ProductDetail({
   const [type, setType] = useState("OUT");
   const [note, setNote] = useState("");
   const [query, setQuery] = useState("");
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [savingCategory, startCategory] = useTransition();
   const { toast } = useToast();
 
   const isOwner = canManageProduct(product, currentUser);
+
+  /**
+   * ถอยกลับหน้าที่มาจริง ๆ ไม่ใช่เด้งกลับหน้าแรกเสมอ
+   *
+   * เดิมลิงก์ไป "/" ตายตัว มาจากหน้าจัดการก็โดนพากลับหน้าแรก แล้วยังต้องโหลดหน้านั้นใหม่
+   * ทั้งที่ browser back คืนหน้าเดิมพร้อมตำแหน่งเลื่อนจอให้ได้เลย
+   *
+   * เปิดลิงก์ตรงมาจากข้างนอกจะไม่มีประวัติให้ถอย เลยส่งไปหน้าแรกแทนไม่ให้ปุ่มด้าน
+   */
+  function goBack() {
+    if (window.history.length > 1) router.back();
+    else router.push("/");
+  }
 
   // เหตุผลเดียวกับหน่วยใน SkuCard — ไม่ส่ง items ปุ่มจะโชว์ id ของหมวดแทนชื่อ
   const categoryItems = useMemo(
@@ -193,16 +208,9 @@ export function ProductDetail({
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 pb-32 sm:px-6">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="mt-4 -ml-2 w-fit"
-        // render เป็น <a> ไม่ใช่ <button> ต้องบอก Base UI ไม่งั้นมันเตือนเรื่อง semantics
-        nativeButton={false}
-        render={<Link href="/" />}
-      >
+      <Button variant="ghost" size="sm" className="mt-4 -ml-2 w-fit" onClick={goBack}>
         <ArrowLeft />
-        กลับหน้ารวมสินค้า
+        ย้อนกลับ
       </Button>
 
       {/* หัวสินค้า */}

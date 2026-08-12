@@ -1,7 +1,7 @@
 "use client";
 
 import { useDeferredValue, useMemo, useState, useTransition } from "react";
-import { Package, Search, Trash2, X } from "lucide-react";
+import { Filter, Package, Search, Trash2, X } from "lucide-react";
 
 import { Card, CardHeader, CardTitle, CardAction, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,10 +19,8 @@ import {
 } from "@/components/ui/combobox";
 import { useToast } from "@/components/ui/toast";
 import { NewProductDialog } from "@/components/manage/new-product-dialog";
-import { AdjustStockDialog } from "@/components/manage/adjust-stock-dialog";
-import { EditProductDialog } from "@/components/manage/edit-product-dialog";
-import { SkusDialog } from "@/components/manage/skus-dialog";
-import { deleteProductAction, setProductsCategoryAction } from "@/app/manage/actions";
+import { ProductRowActions } from "@/components/manage/product-row-actions";
+import { setProductsCategoryAction } from "@/app/manage/actions";
 import { canManageProduct } from "@/lib/permissions";
 import { formatBreakdown, productUnits } from "@/lib/stock";
 
@@ -33,6 +31,9 @@ const COLUMNS =
 
 // ค่าของ "ไม่มีหมวดหมู่" ใน Select — string ว่างใช้ไม่ได้ Base UI ถือว่ายังไม่ได้เลือก
 const NO_CATEGORY = "none";
+
+// ค่าพิเศษของตัวกรอง แยกจาก NO_CATEGORY เพราะ "ทุกหมวด" กับ "ไม่มีหมวด" คนละความหมาย
+const ALL_CATEGORIES = "all";
 
 // URL รูปพิมพ์มือได้ พังบ่อย เลยถอยกลับไปใช้ไอคอนแทนกรอบรูปเสียของเบราว์เซอร์
 function Thumbnail({ product }) {
@@ -86,32 +87,58 @@ export function ProductsPanel({
   setUnitTypes,
   categories = [],
   currentUser,
+  onProductUpdated,
+  onSkuCountChange,
+  onProductDelete,
+  deletingIds,
 }) {
   const [query, setQuery] = useState("");
   // สินค้าที่ติ๊กไว้เพื่อทำอะไรพร้อมกันหลายตัว เก็บเป็น id ไม่ใช่ index เพราะรายการถูกกรองได้
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkCategory, setBulkCategory] = useState(NO_CATEGORY);
+  const [filterCategory, setFilterCategory] = useState(ALL_CATEGORIES);
   const [applying, startApply] = useTransition();
   const { toast } = useToast();
-  const [error, setError] = useState(null);
-  // ปุ่มลบที่กดไปแล้วเท่านั้นที่ต้องหยุด ไม่ใช่ทั้งตาราง — เดิมใช้ isPending ตัวเดียว
-  // ลบชิ้นเดียวก็ปิดปุ่มลบของทุกแถวไปด้วยจนกว่า server จะตอบ
-  const [deletingIds, setDeletingIds] = useState(() => new Set());
-  const [, startTransition] = useTransition();
 
   // การกรองหนักกว่าการอัปเดตช่องพิมพ์ ปล่อยให้ตัวอักษรขึ้นจอก่อนแล้วค่อยตามด้วยรายการ
   const deferredQuery = useDeferredValue(query);
 
-  // ค้นได้ทั้งชื่อสินค้าและชื่อหมวดหมู่ — จำชื่อสินค้าไม่ได้ก็ยังไล่จากหมวดได้
+  // ตัวกรองหมวดกับช่องค้นหาทำงานพร้อมกัน — เลือกหมวดแล้วยังพิมพ์ค้นในหมวดนั้นต่อได้
   const matches = useMemo(() => {
     const needle = deferredQuery.trim().toLowerCase();
-    if (!needle) return products;
-    return products.filter(
-      (product) =>
+
+    return products.filter((product) => {
+      if (filterCategory === NO_CATEGORY && product.categoryId !== null) return false;
+      if (
+        filterCategory !== ALL_CATEGORIES &&
+        filterCategory !== NO_CATEGORY &&
+        String(product.categoryId) !== filterCategory
+      ) {
+        return false;
+      }
+      if (!needle) return true;
+
+      // ค้นได้ทั้งชื่อสินค้าและชื่อหมวดหมู่ — จำชื่อสินค้าไม่ได้ก็ยังไล่จากหมวดได้
+      return (
         product.name.toLowerCase().includes(needle) ||
         (product.category?.name ?? "").toLowerCase().includes(needle)
-    );
-  }, [products, deferredQuery]);
+      );
+    });
+  }, [products, deferredQuery, filterCategory]);
+
+  const filterOptions = useMemo(
+    () => [
+      { value: ALL_CATEGORIES, label: "ทุกหมวดหมู่" },
+      { value: NO_CATEGORY, label: "ไม่มีหมวดหมู่" },
+      ...categories.map((category) => ({
+        value: String(category.id),
+        label: category.name,
+      })),
+    ],
+    [categories]
+  );
+  const selectedFilter =
+    filterOptions.find((option) => option.value === filterCategory) ?? filterOptions[0];
 
   // ติ๊กได้เฉพาะสินค้าที่ตัวเองแก้ได้ ฝั่ง server ก็ปฏิเสธทั้งชุดถ้ามีตัวที่ไม่ใช่ของเราปน
   const selectableMatches = useMemo(
@@ -198,44 +225,6 @@ export function ProductsPanel({
     setProducts((prev) => [product, ...prev]);
   }
 
-  function handleDelete(id) {
-    if (deletingIds.has(id)) return;
-    setDeletingIds((prev) => new Set(prev).add(id));
-
-    startTransition(async () => {
-      const result = await deleteProductAction(id);
-      setDeletingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-
-      if (result.ok) {
-        setProducts((prev) => prev.filter((product) => product.id !== id));
-        setError(null);
-      } else {
-        setError(result.error);
-      }
-    });
-  }
-
-  // กล่องจัดการตัวเลือกคืนมาแค่จำนวน ไม่ได้คืนสินค้าทั้งก้อน เลยแก้เฉพาะตัวนับในตาราง
-  function handleSkuCountChange(productId, skus) {
-    setProducts((prev) =>
-      prev.map((product) =>
-        product.id === productId
-          ? { ...product, _count: { ...product._count, skus } }
-          : product
-      )
-    );
-  }
-
-  // ทั้งแก้ไขสินค้าและปรับสต็อกคืน product ที่อัปเดตแล้วมาทั้งก้อน
-  function handleProductReplaced(updated) {
-    setProducts((prev) =>
-      prev.map((product) => (product.id === updated.id ? updated : product))
-    );
-  }
 
   return (
     <Card>
@@ -257,8 +246,9 @@ export function ProductsPanel({
           </div>
         ) : (
           <div className="flex flex-col">
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row">
             {/* icon เป็น flex item จริง ไม่ใช่ absolute ทับบน input เลยไม่มีทางชนข้อความ */}
-            <div className="mb-3 flex h-10 items-center gap-2 rounded-lg border border-input bg-transparent px-2.5 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 sm:h-9 dark:bg-input/30">
+            <div className="flex h-10 flex-1 items-center gap-2 rounded-lg border border-input bg-transparent px-2.5 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 sm:h-9 dark:bg-input/30">
               <Search className="size-4 shrink-0 text-muted-foreground" />
               <input
                 value={query}
@@ -277,6 +267,36 @@ export function ProductsPanel({
                   <X />
                 </Button>
               )}
+            </div>
+
+            {/* กรองตามหมวด — combobox เพราะหมวดมีได้เยอะ ต้องพิมพ์ค้นได้ */}
+            <Combobox
+              items={filterOptions}
+              value={selectedFilter}
+              onValueChange={(option) =>
+                setFilterCategory(option ? option.value : ALL_CATEGORIES)
+              }
+              itemToStringLabel={(option) => option?.label ?? ""}
+              isItemEqualToValue={(a, b) => a?.value === b?.value}
+              limit={50}
+              autoHighlight
+            >
+              <ComboboxInputGroup className="w-full sm:w-56">
+                <Filter className="size-4 shrink-0 text-muted-foreground" />
+                <ComboboxInput placeholder="กรองตามหมวดหมู่" />
+                <ComboboxTrigger />
+              </ComboboxInputGroup>
+              <ComboboxContent>
+                <ComboboxEmpty>ไม่พบหมวดหมู่ที่ค้นหา</ComboboxEmpty>
+                <ComboboxList>
+                  {(option) => (
+                    <ComboboxItem key={option.value} value={option}>
+                      {option.label}
+                    </ComboboxItem>
+                  )}
+                </ComboboxList>
+              </ComboboxContent>
+            </Combobox>
             </div>
 
             {/* แถบทำงานหมู่ — โผล่เมื่อติ๊กสินค้าไว้อย่างน้อยหนึ่งตัว */}
@@ -352,7 +372,9 @@ export function ProductsPanel({
 
             {matches.length === 0 && (
               <p className="py-10 text-center text-sm text-muted-foreground">
-                ไม่พบสินค้าที่ตรงกับ &ldquo;{deferredQuery.trim()}&rdquo;
+                {deferredQuery.trim()
+                  ? `ไม่พบสินค้าที่ตรงกับ “${deferredQuery.trim()}”`
+                  : `ไม่มีสินค้าในหมวด “${selectedFilter.label}”`}
               </p>
             )}
 
@@ -395,44 +417,22 @@ export function ProductsPanel({
                   <StockCell product={product} />
                 </div>
 
-                <div className="col-start-3 row-span-3 row-start-1 flex justify-end gap-1.5 justify-self-end sm:col-start-5 sm:row-span-1">
-                  {/* ไม่ใช่เจ้าของก็ซ่อนแก้ไข/ลบไปเลย เหลือแค่ตัดสต็อก — ฝั่ง server กันซ้ำอีกชั้น */}
-                  {canManageProduct(product, currentUser) && (
-                    <>
-                      <EditProductDialog
-                        product={product}
-                        onUpdated={handleProductReplaced}
-                      />
-                      <SkusDialog
-                        product={product}
-                        unitTypes={unitTypes}
-                        onCountChange={(count) => handleSkuCountChange(product.id, count)}
-                      />
-                    </>
-                  )}
-                  <AdjustStockDialog
+                <div className="col-start-3 row-span-3 row-start-1 justify-self-end sm:col-start-5 sm:row-span-1">
+                  <ProductRowActions
                     product={product}
+                    unitTypes={unitTypes}
                     currentUser={currentUser}
-                    onAdjusted={handleProductReplaced}
+                    onUpdated={onProductUpdated}
+                    onSkuCountChange={onSkuCountChange}
+                    onDelete={onProductDelete}
+                    deleting={deletingIds?.has(product.id)}
                   />
-                  {canManageProduct(product, currentUser) && (
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      disabled={deletingIds.has(product.id)}
-                      onClick={() => handleDelete(product.id)}
-                      aria-label={`ลบ ${product.name}`}
-                    >
-                      <Trash2 />
-                    </Button>
-                  )}
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
       </CardContent>
     </Card>
   );

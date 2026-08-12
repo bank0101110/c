@@ -14,13 +14,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { CategoryProductsDialog } from "@/components/manage/category-products-dialog";
 import {
   createCategoryAction,
   deleteCategoryAction,
   updateCategoryAction,
 } from "@/app/manage/actions";
 
-export function CategoriesPanel({ categories, setCategories }) {
+export function CategoriesPanel({
+  categories,
+  setCategories,
+  products = [],
+  unitTypes = [],
+  currentUser,
+  onProductUpdated,
+  onSkuCountChange,
+  onProductDelete,
+  deletingIds,
+}) {
   const [name, setName] = useState("");
   const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
@@ -216,6 +227,16 @@ export function CategoriesPanel({ categories, setCategories }) {
                     <>
                       <span className="flex-1 truncate text-sm">{category.name}</span>
                       <Badge variant="secondary">{category._count?.products ?? 0}</Badge>
+                      <CategoryProductsDialog
+                        category={category}
+                        products={products}
+                        unitTypes={unitTypes}
+                        currentUser={currentUser}
+                        onProductUpdated={onProductUpdated}
+                        onSkuCountChange={onSkuCountChange}
+                        onProductDelete={onProductDelete}
+                        deletingIds={deletingIds}
+                      />
                       <Button
                         size="icon-sm"
                         variant="ghost"
