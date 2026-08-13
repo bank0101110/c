@@ -1,6 +1,8 @@
 "use client";
 
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useMemo } from "react";
+
+import { useUrlState } from "@/lib/use-url-state";
 
 // คำค้นอยู่ใน context ไม่ใช่ state ของ ProductCatalog เอง เพื่อให้ย้ายช่องค้นหา
 // ไปไว้ที่ navbar หรือ hero ได้โดยไม่ต้องยกสถานะขึ้นไปทั้งต้น
@@ -8,7 +10,8 @@ import { createContext, useContext, useMemo, useState } from "react";
 const SearchContext = createContext(null);
 
 export function SearchProvider({ products = [], children }) {
-  const [query, setQuery] = useState("");
+  // อยู่ใน URL ไม่ใช่ useState เพื่อให้กดเข้าหน้าสินค้าแล้วย้อนกลับมาแล้วคำค้นยังอยู่
+  const [query, setQuery] = useUrlState("q");
 
   /**
    * ทำชื่อพิมพ์เล็กไว้ล่วงหน้าครั้งเดียว
@@ -24,7 +27,7 @@ export function SearchProvider({ products = [], children }) {
 
   const value = useMemo(
     () => ({ query, setQuery, products, index }),
-    [query, products, index]
+    [query, setQuery, products, index]
   );
 
   return <SearchContext.Provider value={value}>{children}</SearchContext.Provider>;

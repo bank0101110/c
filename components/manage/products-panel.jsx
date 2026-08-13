@@ -22,6 +22,7 @@ import { NewProductDialog } from "@/components/manage/new-product-dialog";
 import { ProductRowActions } from "@/components/manage/product-row-actions";
 import { setProductsCategoryAction } from "@/app/manage/actions";
 import { canManageProduct } from "@/lib/permissions";
+import { useUrlState } from "@/lib/use-url-state";
 import { formatBreakdown, productUnits } from "@/lib/stock";
 
 // คอลัมน์ต้องตรงกันระหว่างหัวตารางกับแถว เลยแชร์คลาสเดียว
@@ -92,11 +93,12 @@ export function ProductsPanel({
   onProductDelete,
   deletingIds,
 }) {
-  const [query, setQuery] = useState("");
+  // คำค้นกับตัวกรองอยู่ใน URL ไม่ใช่ useState — เข้าหน้าสินค้าแล้วย้อนกลับมาต้องยังอยู่
+  const [query, setQuery] = useUrlState("q");
   // สินค้าที่ติ๊กไว้เพื่อทำอะไรพร้อมกันหลายตัว เก็บเป็น id ไม่ใช่ index เพราะรายการถูกกรองได้
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkCategory, setBulkCategory] = useState(NO_CATEGORY);
-  const [filterCategory, setFilterCategory] = useState(ALL_CATEGORIES);
+  const [filterCategory, setFilterCategory] = useUrlState("cat", ALL_CATEGORIES);
   const [applying, startApply] = useTransition();
   const { toast } = useToast();
 

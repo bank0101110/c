@@ -7,6 +7,7 @@ import { PackageX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProductCard } from "@/components/landing/product-card";
 import { useSearch } from "@/components/landing/search-context";
+import { useUrlState } from "@/lib/use-url-state";
 
 // ค่าพิเศษของแถบกรอง แยกจาก id หมวดจริงที่เป็นตัวเลข
 const ALL = "all";
@@ -20,7 +21,9 @@ export function ProductCatalog({ products, categories = [] }) {
   const { query, index } = useSearch();
   // การปรับสต็อกย้ายไปทำที่หน้าสินค้าแล้ว ที่นี่จึงไม่ต้องถือสำเนารายการไว้แก้เอง
   const productList = products;
-  const [activeCategory, setActiveCategory] = useState(ALL);
+  // อยู่ใน URL ไม่ใช่ useState เพื่อให้เข้าหน้าสินค้าแล้วย้อนกลับมาแล้วหมวดที่เลือกยังอยู่
+  // ค่าที่ได้เป็น string เสมอ (มาจาก query string) เวลาเทียบกับ category.id ต้องแปลงให้ตรงชนิด
+  const [activeCategory, setActiveCategory] = useUrlState("cat", ALL);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const sentinelRef = useRef(null);
 
@@ -118,9 +121,9 @@ export function ProductCatalog({ products, categories = [] }) {
               key={category.id}
               size="sm"
               className="h-8"
-              variant={activeCategory === category.id ? "default" : "outline"}
-              aria-pressed={activeCategory === category.id}
-              onClick={() => setActiveCategory(category.id)}
+              variant={activeCategory === String(category.id) ? "default" : "outline"}
+              aria-pressed={activeCategory === String(category.id)}
+              onClick={() => setActiveCategory(String(category.id))}
             >
               {category.name}
             </Button>
