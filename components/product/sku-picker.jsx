@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { Check, Package } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -22,8 +22,18 @@ import { thumbnailUrl } from "@/lib/images";
  * ช่องกรอกจำนวนกับหน่วยโผล่เฉพาะตอนติ๊กแล้ว เพื่อไม่ให้หน้าจอรกตอนมีตัวเลือกเป็นสิบ ๆ ตัว
  * และกันกรอกเลขทิ้งไว้ในตัวที่ไม่ได้เลือกแล้วงงว่าทำไมไม่ถูกบันทึก
  */
-export function SkuCard({ sku, selected, draft, disabled, type, onToggle, onDraftChange }) {
-  const units = skuUnits(sku);
+export const SkuCard = memo(function SkuCard({
+  sku,
+  selected,
+  draft,
+  disabled,
+  type,
+  onToggle,
+  onDraftChange,
+}) {
+  // skuUnits() คัดซ้ำแล้วเรียงใหม่ทุกครั้ง ต้อง memo ไว้ ไม่งั้นได้ array ใหม่ทุก render
+  // แล้ว useMemo ของ unitItems ที่พึ่ง units เป็น dep ก็คำนวณใหม่ตามไปด้วยทุกครั้ง
+  const units = useMemo(() => skuUnits(sku), [sku]);
   // Select ของ Base UI ต้องได้แผนที่ value -> label ถึงจะโชว์ชื่อหน่วยที่เลือกได้
   // ไม่ส่งมาให้ ปุ่มจะโชว์ค่าดิบซึ่งคือ id ของหน่วย (เช่น "63") แทนที่จะเป็น "ชิ้น (×1)"
   const unitItems = useMemo(
@@ -140,4 +150,4 @@ export function SkuCard({ sku, selected, draft, disabled, type, onToggle, onDraf
       )}
     </div>
   );
-}
+});

@@ -145,17 +145,19 @@ export async function deleteSku(id) {
  * ทุกทางที่แตะ Sku.qty ต้องเรียกตัวนี้ปิดท้ายเสมอ
  */
 export async function syncProductQty(tx, productId) {
-    const total = await tx.sku.aggregate({
+    // นับกับรวมยอดมาจาก query เดียว เดิมแยกเป็น aggregate + count ทั้งที่กวาดตารางเดียวกัน
+    const totals = await tx.sku.aggregate({
         where: { productId },
         _sum: { qty: true },
+        _count: true,
     })
+
     // ไม่มี SKU เหลือแล้ว = กลับไปเป็นสินค้าเดี่ยว ปล่อย qty ไว้ให้ผู้ใช้จัดการเอง
-    const count = await tx.sku.count({ where: { productId } })
-    if (count === 0) return null
+    if (totals._count === 0) return null
 
     return tx.product.update({
         where: { id: productId },
-        data: { qty: total._sum.qty ?? 0 },
+        data: { qty: totals._sum.qty ?? 0 },
         select: { id: true, qty: true },
     })
 }

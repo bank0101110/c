@@ -78,6 +78,26 @@ export async function getProduct(id) {
     }
 }
 
+/**
+ * ชื่อสินค้าล้วน ๆ สำหรับ generateMetadata()
+ *
+ * Next เรียก generateMetadata() แยกจากตัวเพจ และ Prisma ไม่ได้ dedupe ให้เหมือน fetch()
+ * เดิมตรงนั้นเรียก getProduct() ตัวเต็ม หน้าสินค้าหนึ่งหน้าจึงลาก SKU + หน่วยทุกตัวมาสองรอบ
+ * ทั้งที่รอบนั้นใช้แค่ชื่อไปทำ <title>
+ */
+export async function getProductName(id) {
+    try {
+        const product = await prisma.product.findUnique({
+            where: { id },
+            select: { name: true },
+        })
+        return product?.name ?? null
+    } catch (error) {
+        console.error(error)
+        return null
+    }
+}
+
 /** ฟิลด์เท่าที่ Server Action ต้องใช้ตรวจสิทธิ์และตรวจค่า ไม่ต้องลากทั้งสินค้า+หน่วยมา */
 export async function getProductGuard(id) {
     try {

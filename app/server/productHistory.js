@@ -1,5 +1,7 @@
+import { Prisma } from "@prisma/client"
+
 import { prisma } from "@/prisma/prisma.js"
-import { productInclude, productDetailInclude } from "@/app/server/product"
+import { productInclude } from "@/app/server/product"
 import { syncProductQty } from "@/app/server/sku"
 import { toBase } from "@/lib/stock"
 
@@ -110,17 +112,44 @@ class BatchError extends Error {}
  * ทำเป็นก้อนเดียวเพราะผู้ใช้กด "บันทึก" ครั้งเดียวหลังติ๊กหลายตัว — ถ้าตัวใดตัวหนึ่ง
  * ไม่ผ่าน (เช่นตัดจนติดลบ) ต้องไม่มีตัวไหนถูกบันทึกเลย ไม่งั้นยอดจะค้างครึ่ง ๆ
  * และผู้ใช้ไม่รู้ว่าอันไหนผ่านอันไหนไม่ผ่าน
+ *
+ * จำนวน query ต้องคงที่ ไม่โตตามจำนวนตัวเลือกที่ติ๊ก
+ *
+ * เดิมลูปนี้ยิง DB ทีละแถว (หาหน่วย + update + create history = 3 รอบต่อหนึ่งตัวเลือก)
+ * ติ๊ก 30 ตัวก็เกือบ 100 รอบเรียงกันในทรานแซกชันเดียว พอ DB อยู่คนละเครื่อง
+ * ค่า latency ต่อรอบคูณเข้าไปจนชนลิมิตเวลาของ interactive transaction (ดีฟอลต์ 5 วิ)
+ * แล้ว Prisma โยน P2028 ทิ้งทั้งชุด — อาการคือ "ยิ่งเลือกเยอะยิ่งช้าแล้วพังทั้งชุด"
+ * ระหว่างนั้นทรานแซกชันยังจองคอนเนคชันจากพูลไว้ทั้งช่วง หน้าอื่นเลยพลอยหน่วงตามไปด้วย
+ *
+ * ตอนนี้อ่านทีเดียว ตรวจให้ครบใน JS แล้วค่อยเขียนเป็นก้อน — คงที่ที่ 5 query ไม่ว่าจะกี่ตัว
  */
 export async function adjustSkuStockBatch({ userId, productId, entries, note }) {
     try {
         return await prisma.$transaction(async (tx) => {
             const skus = await tx.sku.findMany({
                 where: { productId },
-                include: { baseUnit: true, SkuUnitType: true },
+                select: {
+                    id: true,
+                    name: true,
+                    qty: true,
+                    unitTypeId: true,
+                    SkuUnitType: { select: { unitTypeId: true } },
+                },
             })
-            const byId = new Map(skus.map((sku) => [sku.id, sku]))
 
-            const histories = []
+            // หน่วยที่ถูกอ้างถึงทั้งหมดในชุดนี้ ดึงรอบเดียวจบ (รวมหน่วยหลักของ SKU ด้วย
+            // เพราะหน่วยหลักก็เป็นแถวใน UnitType เหมือนกัน)
+            const unitTypes = await tx.unitType.findMany({
+                where: { id: { in: [...new Set(entries.map((entry) => entry.unitTypeId))] } },
+                select: { id: true, name: true, qty: true },
+            })
+
+            const byId = new Map(skus.map((sku) => [sku.id, sku]))
+            const unitById = new Map(unitTypes.map((unitType) => [unitType.id, unitType]))
+
+            // skuId -> ยอดล่าสุด เผื่อ entries ส่งตัวเลือกเดิมซ้ำมาสองแถว ยอดจะได้ต่อกันถูก
+            const nextQty = new Map()
+            const historyRows = []
 
             for (const entry of entries) {
                 const sku = byId.get(entry.skuId)
@@ -135,13 +164,13 @@ export async function adjustSkuStockBatch({ userId, productId, entries, note }) 
                     throw new BatchError(`หน่วยที่เลือกใช้กับ "${sku.name}" ไม่ได้`)
                 }
 
-                const unitType =
-                    entry.unitTypeId === sku.unitTypeId
-                        ? sku.baseUnit
-                        : await tx.unitType.findUniqueOrThrow({ where: { id: entry.unitTypeId } })
+                const unitType = unitById.get(entry.unitTypeId)
+                if (!unitType) {
+                    throw new BatchError(`ไม่พบหน่วยที่เลือกของ "${sku.name}"`)
+                }
 
                 const factor = unitType.qty > 0 ? unitType.qty : 1
-                const oldQty = sku.qty
+                const oldQty = nextQty.get(sku.id) ?? sku.qty
                 const changeQty =
                     entry.type === "IN"
                         ? toBase(entry.amount, factor)
@@ -154,38 +183,48 @@ export async function adjustSkuStockBatch({ userId, productId, entries, note }) 
                     throw new BatchError(`"${sku.name}" ยอดคงเหลือติดลบไม่ได้`)
                 }
 
-                await tx.sku.update({ where: { id: sku.id }, data: { qty: newQty } })
-                // อัปเดตในแมปด้วย เผื่อ entries ส่งตัวเลือกเดิมซ้ำมาสองแถว ยอดจะได้ต่อกันถูก
-                sku.qty = newQty
-
-                histories.push(
-                    await tx.productHistory.create({
-                        data: {
-                            userId,
-                            productId,
-                            skuId: sku.id,
-                            productUnitTypeId: null,
-                            unitName: unitType.name,
-                            unitAmount: entry.amount,
-                            changeQty,
-                            oldQty,
-                            newQty,
-                            type: entry.type,
-                            note,
-                        },
-                    })
-                )
+                nextQty.set(sku.id, newQty)
+                historyRows.push({
+                    userId,
+                    productId,
+                    skuId: sku.id,
+                    productUnitTypeId: null,
+                    unitName: unitType.name,
+                    unitAmount: entry.amount,
+                    changeQty,
+                    oldQty,
+                    newQty,
+                    type: entry.type,
+                    note,
+                })
             }
 
+            // ยอดใหม่ของทุกตัวเลือกในคำสั่งเดียว — updateMany ทำไม่ได้เพราะแต่ละแถวคนละค่า
+            // ("updatedAt" ต้องเซ็ตเองด้วย @updatedAt ของ Prisma ไม่ทำงานกับ raw query)
+            const updates = [...nextQty].filter(([skuId, qty]) => qty !== byId.get(skuId).qty)
+            if (updates.length > 0) {
+                await tx.$executeRaw`
+                    UPDATE "Sku" AS s
+                    SET qty = v.qty, "updatedAt" = NOW()
+                    FROM (VALUES ${Prisma.join(
+                        updates.map(([skuId, qty]) => Prisma.sql`(${skuId}::int, ${qty}::int)`)
+                    )}) AS v(id, qty)
+                    WHERE s.id = v.id
+                `
+            }
+
+            await tx.productHistory.createMany({ data: historyRows })
+
             // ยอดรวมของสินค้าแม่ต้องตามยอด SKU ที่เพิ่งเปลี่ยน
-            await syncProductQty(tx, productId)
+            const totals = await syncProductQty(tx, productId)
 
-            const product = await tx.product.findUnique({
-                where: { id: productId },
-                include: productDetailInclude,
-            })
-
-            return { ok: true, product, histories }
+            // ส่งกลับเฉพาะยอดที่เปลี่ยน ไม่ใช่สินค้าทั้งก้อน
+            //
+            // เดิมปิดท้ายด้วย findUnique + productDetailInclude ซึ่ง Prisma แตกเป็น query
+            // ต่อหนึ่ง relation (SKU, หน่วยของ SKU, หน่วยเสริม, เจ้าของ, หมวด) — วัดจริงกับสินค้า
+            // 99 ตัวเลือกคือ ~800 ms แล้วยัดกลับไปทั้งก้อนทั้งที่มีแค่ qty ที่ขยับ
+            // ฝั่ง UI ถือข้อมูลที่เหลืออยู่แล้ว เอาไปแปะทับเฉพาะตัวเลขก็พอ
+            return { ok: true, productQty: totals?.qty ?? 0, skuQty: Object.fromEntries(nextQty) }
         })
     } catch (error) {
         // BatchError = เหตุผลที่อธิบายผู้ใช้ได้ ส่งข้อความจริงกลับไป

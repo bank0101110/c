@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 
-import { getProduct } from "@/app/server/product";
-import { getUnitTypes } from "@/app/server/unitType";
+import { getProduct, getProductName } from "@/app/server/product";
 import { getCategories } from "@/app/server/category";
 import { getCurrentUser } from "@/app/server/session";
 import { Navbar } from "@/components/landing/navbar";
@@ -12,8 +11,8 @@ export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }) {
   const { id } = await params;
-  const product = await getProduct(Number(id));
-  return { title: product ? `${product.name} — เช็คสต็อก` : "ไม่พบสินค้า" };
+  const name = await getProductName(Number(id));
+  return { title: name ? `${name} — เช็คสต็อก` : "ไม่พบสินค้า" };
 }
 
 export default async function ProductPage({ params }) {
@@ -22,9 +21,8 @@ export default async function ProductPage({ params }) {
   const productId = Number(id);
   if (!Number.isInteger(productId) || productId <= 0) notFound();
 
-  const [product, unitTypes, categories, currentUser] = await Promise.all([
+  const [product, categories, currentUser] = await Promise.all([
     getProduct(productId),
-    getUnitTypes(),
     getCategories(),
     getCurrentUser(),
   ]);
@@ -37,7 +35,6 @@ export default async function ProductPage({ params }) {
       <main className="flex flex-1 flex-col">
         <ProductDetail
           product={product}
-          unitTypes={unitTypes}
           categories={categories}
           currentUser={currentUser}
         />

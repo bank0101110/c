@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, LogIn, Package, Search, X } from "lucide-react";
@@ -24,7 +24,6 @@ import {
   setProductCategoryAction,
 } from "@/app/manage/actions";
 import { allowedStockTypes, canManageProduct } from "@/lib/permissions";
-import { skuUnits } from "@/lib/stock";
 
 // ค่าของ "ไม่มีหมวดหมู่" ใน Select — ใช้ string ว่างไม่ได้ Base UI ถือว่าเป็นยังไม่ได้เลือก
 const NO_CATEGORY = "none";
@@ -35,12 +34,7 @@ const TYPES = [
   { value: "ADJUSTMENT", label: "ตั้งยอดใหม่" },
 ];
 
-export function ProductDetail({
-  product: initialProduct,
-  unitTypes,
-  categories = [],
-  currentUser,
-}) {
+export function ProductDetail({ product: initialProduct, categories = [], currentUser }) {
   const [product, setProduct] = useState(initialProduct);
   // drafts: skuId -> { amount, unitTypeId } — มีคีย์อยู่ = ถูกติ๊กเลือกไว้
   const [drafts, setDrafts] = useState({});
@@ -121,27 +115,31 @@ export function ProductDetail({
   const selectedIds = Object.keys(drafts).map(Number);
   const selectedCount = selectedIds.length;
 
-  function toggle(skuId) {
-    setDrafts((prev) => {
-      const next = { ...prev };
-      if (next[skuId]) {
-        delete next[skuId];
+  // toggle กับ changeDraft ถูกส่งเข้า SkuCard ที่ห่อ memo ไว้ ต้องคงตัวเดิมข้าม render
+  // ไม่งั้น prop เปลี่ยนทุกครั้ง memo ก็ไม่ช่วยอะไร แล้วการพิมพ์ในช่องเดียวจะลาก
+  // การ์ดทั้งหน้า (มีได้เป็นสิบ ๆ ใบ พร้อมรูปและ Select ของตัวเอง) มา re-render ด้วยทั้งหมด
+  const toggle = useCallback(
+    (skuId) => {
+      setDrafts((prev) => {
+        const next = { ...prev };
+        if (next[skuId]) {
+          delete next[skuId];
+          return next;
+        }
+        next[skuId] = {
+          amount: "",
+          // เลือกหน่วยหลักให้เลย ผู้ใช้จะได้กรอกแค่ตัวเลขในกรณีปกติ
+          unitTypeId: String(skus.find((item) => item.id === skuId)?.unitTypeId ?? ""),
+        };
         return next;
-      }
-      const sku = skus.find((item) => item.id === skuId);
-      const options = sku ? skuUnits(sku) : [];
-      next[skuId] = {
-        amount: "",
-        // เลือกหน่วยหลักให้เลย ผู้ใช้จะได้กรอกแค่ตัวเลขในกรณีปกติ
-        unitTypeId: String(sku?.unitTypeId ?? options[0]?.id ?? ""),
-      };
-      return next;
-    });
-  }
+      });
+    },
+    [skus]
+  );
 
-  function changeDraft(skuId, patch) {
+  const changeDraft = useCallback((skuId, patch) => {
     setDrafts((prev) => ({ ...prev, [skuId]: { ...prev[skuId], ...patch } }));
-  }
+  }, []);
 
   function selectAllVisible() {
     setDrafts((prev) => {
@@ -195,7 +193,15 @@ export function ProductDetail({
         return;
       }
 
-      setProduct(result.product);
+      // action ส่งกลับเฉพาะยอดที่เปลี่ยน แปะทับตัวเลขลงของเดิมที่ถืออยู่
+      // (ชื่อ/รูป/หน่วยไม่ได้ถูกแตะในรายการปรับสต็อก เลยไม่ต้องดึงกลับมาใหม่ทั้งก้อน)
+      setProduct((prev) => ({
+        ...prev,
+        qty: result.productQty,
+        skus: prev.skus.map((sku) =>
+          sku.id in result.skuQty ? { ...sku, qty: result.skuQty[sku.id] } : sku
+        ),
+      }));
       clearAll();
       setNote("");
       toast({
