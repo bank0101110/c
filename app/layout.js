@@ -19,8 +19,22 @@ const mono = Geist_Mono({
 });
 
 export const metadata = {
-  title: siteConfig.name,
+  // template ทำให้หน้าลูกส่งแค่ชื่อของตัวเองมา แล้วได้ "ชื่อสินค้า — Stockly" อัตโนมัติ
+  title: { default: siteConfig.name, template: `%s — ${siteConfig.name}` },
   description: siteConfig.description,
+  // ค่าตั้งต้นของพรีวิวตอนแชร์ หน้าไหนมีของตัวเอง (เช่นหน้าสินค้า) จะเขียนทับเฉพาะที่ตั้ง
+  openGraph: {
+    type: "website",
+    siteName: siteConfig.name,
+    locale: "th_TH",
+    title: siteConfig.name,
+    description: siteConfig.description,
+  },
+  twitter: {
+    card: "summary",
+    title: siteConfig.name,
+    description: siteConfig.description,
+  },
 };
 
 export default function RootLayout({ children }) {
