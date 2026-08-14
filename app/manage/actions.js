@@ -1,5 +1,7 @@
 "use server"
 
+import { after } from "next/server"
+
 import {
     createProduct,
     deleteProduct,
@@ -13,7 +15,12 @@ import {
     removeProductUnit,
 } from "@/app/server/productUnitType"
 import { createUnitType, deleteUnitType, findUnitType, getUnitType } from "@/app/server/unitType"
-import { adjustStock, adjustSkuStockBatch, getProductHistory } from "@/app/server/productHistory"
+import {
+    adjustStock,
+    adjustSkuStockBatch,
+    getProductHistory,
+    writeStockHistory,
+} from "@/app/server/productHistory"
 import { createSku, deleteSku, getSkuGuard, saveSku, setSkusUnits } from "@/app/server/sku"
 import {
     createCategory,
@@ -352,12 +359,23 @@ export async function adjustSkuStockBatchAction(productId, entries, note) {
         cleaned.push({ skuId, unitTypeId, amount, type })
     }
 
-    return adjustSkuStockBatch({
+    const result = await adjustSkuStockBatch({
         userId: user.id,
         productId: id,
         entries: cleaned,
         note: String(note ?? "").trim() || null,
     })
+
+    // เขียนประวัติหลังส่ง response แล้ว ผู้ใช้ไม่ต้องรออีก ~50ms ต่อการบันทึกหนึ่งครั้ง
+    // after() ของ Next รับประกันว่างานนี้ได้รันจนจบ ไม่ใช่ promise ลอยที่อาจโดนตัดกลางคัน
+    if (result.ok && result.historyRows?.length) {
+        const rows = result.historyRows
+        after(() => writeStockHistory(rows))
+    }
+
+    // historyRows เป็นรายละเอียดภายใน ไม่ต้องส่งข้ามสายไปถึง client
+    const { historyRows: _unused, ...payload } = result
+    return payload
 }
 
 export async function createSkuAction(

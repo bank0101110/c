@@ -123,6 +123,25 @@ class BatchError extends Error {}
  *
  * ตอนนี้อ่านทีเดียว ตรวจให้ครบใน JS แล้วค่อยเขียนเป็นก้อน — คงที่ที่ 5 query ไม่ว่าจะกี่ตัว
  */
+/**
+ * เขียนประวัติการปรับสต็อก — ตั้งใจแยกออกจากทรานแซกชันที่เปลี่ยนยอด
+ *
+ * เรียกหลังส่ง response ให้ผู้ใช้แล้ว (ผ่าน after() ของ Next) ผู้ใช้จึงไม่ต้องรอ
+ *
+ * ⚠ ผลที่ตามมา: ถ้าเขียนพลาด ยอดจะเปลี่ยนไปแล้วแต่ไม่มีประวัติกำกับ ซึ่งกู้อัตโนมัติไม่ได้
+ * เลย log ข้อมูลทั้งก้อนออกมาให้ประกอบกลับเองได้ อย่าลดเป็นแค่ข้อความสั้น ๆ
+ */
+export async function writeStockHistory(rows) {
+    if (!Array.isArray(rows) || rows.length === 0) return true
+    try {
+        await prisma.productHistory.createMany({ data: rows })
+        return true
+    } catch (error) {
+        console.error("writeStockHistory failed", JSON.stringify(rows), error)
+        return false
+    }
+}
+
 export async function adjustSkuStockBatch({ userId, productId, entries, note }) {
     try {
         return await prisma.$transaction(async (tx) => {
@@ -213,8 +232,6 @@ export async function adjustSkuStockBatch({ userId, productId, entries, note }) 
                 `
             }
 
-            await tx.productHistory.createMany({ data: historyRows })
-
             // ยอดรวมของสินค้าแม่ต้องตามยอด SKU ที่เพิ่งเปลี่ยน
             const totals = await syncProductQty(tx, productId)
 
@@ -224,7 +241,14 @@ export async function adjustSkuStockBatch({ userId, productId, entries, note }) 
             // ต่อหนึ่ง relation (SKU, หน่วยของ SKU, หน่วยเสริม, เจ้าของ, หมวด) — วัดจริงกับสินค้า
             // 99 ตัวเลือกคือ ~800 ms แล้วยัดกลับไปทั้งก้อนทั้งที่มีแค่ qty ที่ขยับ
             // ฝั่ง UI ถือข้อมูลที่เหลืออยู่แล้ว เอาไปแปะทับเฉพาะตัวเลขก็พอ
-            return { ok: true, productQty: totals?.qty ?? 0, skuQty: Object.fromEntries(nextQty) }
+            // historyRows ไม่ได้เขียนที่นี่ — ฝั่ง action เอาไปเขียนหลังตอบ response แล้ว
+            // (วัดได้ ~50ms จาก 261ms ของทั้งชุด) ดู writeStockHistory() ด้านล่าง
+            return {
+                ok: true,
+                productQty: totals?.qty ?? 0,
+                skuQty: Object.fromEntries(nextQty),
+                historyRows,
+            }
         })
     } catch (error) {
         // BatchError = เหตุผลที่อธิบายผู้ใช้ได้ ส่งข้อความจริงกลับไป

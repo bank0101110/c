@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { SkuCard } from "@/components/product/sku-picker";
+import { HistoryDialog } from "@/components/product/history-dialog";
 import {
   adjustSkuStockBatchAction,
   setProductCategoryAction,
@@ -281,6 +282,13 @@ export function ProductDetail({ product: initialProduct, categories = [], curren
             <p className="text-xs text-muted-foreground">
               เจ้าของ: {product.owner.name || product.owner.email}
             </p>
+          )}
+
+          {/* ประวัติเปิดให้เฉพาะคนที่ล็อกอิน เพราะมีชื่อผู้ทำรายการติดอยู่ด้วย */}
+          {currentUser && (
+            <div className="mt-1">
+              <HistoryDialog product={product} />
+            </div>
           )}
         </div>
       </div>
