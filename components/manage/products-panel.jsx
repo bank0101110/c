@@ -427,6 +427,7 @@ export function ProductsPanel({
                   <ProductRowActions
                     product={product}
                     unitTypes={unitTypes}
+                    setUnitTypes={setUnitTypes}
                     currentUser={currentUser}
                     onUpdated={onProductUpdated}
                     onSkuCountChange={onSkuCountChange}

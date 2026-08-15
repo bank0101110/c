@@ -22,6 +22,7 @@ import { useToast } from "@/components/ui/toast";
 import { ImageField, uploadPendingImage } from "@/components/manage/image-field";
 import {
   createSkuAction,
+  createUnitTypeAction,
   deleteSkuAction,
   getProductSkusAction,
   saveSkuAction,
@@ -43,8 +44,10 @@ import {
   ComboboxValue,
 } from "@/components/ui/combobox";
 import {
+  BASE_UNIT_FACTOR,
   baseUnitTypes,
   sameUnitOption,
+  sortUnits,
   skuUnits,
   unitOptionFilter,
   unitOptionLabel,
@@ -146,7 +149,7 @@ function SkuRow({ sku, onEdit, onDelete, busy, selected, onToggle }) {
  *
  * รายการ SKU ไม่ได้ติดมากับตารางสินค้า (payload จะบวมเกินจำเป็น) เลยโหลดตอนเปิดกล่องนี้
  */
-export function SkusDialog({ product, unitTypes, onCountChange }) {
+export function SkusDialog({ product, unitTypes, setUnitTypes, onCountChange }) {
   const [open, setOpen] = useState(false);
   const [skus, setSkus] = useState(null); // null = ยังไม่ได้โหลด
   const [draft, setDraft] = useState(null); // null = ยังไม่ได้เปิดฟอร์ม
@@ -154,6 +157,11 @@ export function SkusDialog({ product, unitTypes, onCountChange }) {
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkUnitId, setBulkUnitId] = useState("");
   const [bulkExtraIds, setBulkExtraIds] = useState(() => new Set());
+  // ฟอร์มสร้างหน่วยในตัว — หน่วยที่ต้องใช้มักนึกออกตอนกรอก SKU ไม่ใช่ตอนอยู่แท็บหน่วยนับ
+  const [showNewUnit, setShowNewUnit] = useState(false);
+  const [unitName, setUnitName] = useState("");
+  const [unitQty, setUnitQty] = useState("1");
+  const [unitError, setUnitError] = useState(null);
   const [busy, startTransition] = useTransition();
   const { toast } = useToast();
 
@@ -236,6 +244,46 @@ export function SkusDialog({ product, unitTypes, onCountChange }) {
       setSkus((prev) => (prev ?? []).map((sku) => updated.get(sku.id) ?? sku));
       setSelectedIds(new Set());
       toast({ variant: "success", title: `ตั้งหน่วยให้ ${result.skus.length} ตัวเลือกแล้ว` });
+    });
+  }
+
+  /**
+   * สร้างหน่วยใหม่โดยไม่ต้องปิดกล่องนี้ออกไปที่แท็บหน่วยนับ
+   *
+   * ตัวคูณ 1 = หน่วยหลักได้ เลยเลือกให้เป็นหน่วยหลักของฟอร์มที่เปิดอยู่
+   * ตัวคูณมากกว่า 1 = หน่วยเสริม ติ๊กเข้าไปในชุดหน่วยอื่นให้เลย
+   */
+  function handleCreateUnit() {
+    const name = unitName.trim();
+    const qty = Number(unitQty);
+    if (!name || !Number.isInteger(qty) || qty < 1) return;
+
+    startTransition(async () => {
+      const result = await createUnitTypeAction(name, qty);
+
+      // ชื่อซ้ำกับที่มีอยู่ ก็หยิบตัวเดิมมาใช้เลย ผู้ใช้จะได้ไม่ต้องไปไล่หาเอง
+      const unit = result.ok ? result.unitType : result.existing;
+      if (!unit) {
+        setUnitError(result.error);
+        return;
+      }
+
+      setUnitTypes?.((prev) =>
+        prev.some((item) => item.id === unit.id) ? prev : sortUnits([...prev, unit])
+      );
+
+      if (draft) {
+        setDraft((prev) =>
+          unit.qty === BASE_UNIT_FACTOR
+            ? { ...prev, unitTypeId: String(unit.id) }
+            : { ...prev, extraUnitIds: new Set([...prev.extraUnitIds, unit.id]) }
+        );
+      }
+
+      setUnitName("");
+      setUnitQty("1");
+      setUnitError(result.ok ? null : `${result.error} — เลือกตัวเดิมให้แล้ว`);
+      if (result.ok) setShowNewUnit(false);
     });
   }
 
@@ -588,7 +636,22 @@ export function SkusDialog({ product, unitTypes, onCountChange }) {
               />
 
               <div className="flex flex-col gap-1.5">
-                <Label>หน่วยหลัก</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label>หน่วยหลัก</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    disabled={busy}
+                    onClick={() => {
+                      setShowNewUnit((prev) => !prev);
+                      setUnitError(null);
+                    }}
+                  >
+                    {showNewUnit ? <X /> : <Plus />}
+                    {showNewUnit ? "ยกเลิก" : "สร้างหน่วยใหม่"}
+                  </Button>
+                </div>
                 <Combobox
                   items={baseUnitOptions}
                   value={selectedBaseOption}
@@ -631,6 +694,58 @@ export function SkusDialog({ product, unitTypes, onCountChange }) {
                     </ComboboxList>
                   </ComboboxContent>
                 </Combobox>
+
+                {showNewUnit && (
+                  <div className="mt-1 flex flex-col gap-2 rounded-lg border border-dashed border-border p-2.5">
+                    <div className="flex items-end gap-2">
+                      <div className="flex flex-1 flex-col gap-1.5">
+                        <Label htmlFor="new-unit-name">ชื่อหน่วย</Label>
+                        <Input
+                          id="new-unit-name"
+                          value={unitName}
+                          onChange={(event) => setUnitName(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter") return;
+                            // อยู่ในกล่องที่มีปุ่มบันทึกอยู่แล้ว กัน Enter ไปยิงตัวนั้นแทน
+                            event.preventDefault();
+                            handleCreateUnit();
+                          }}
+                          placeholder="เช่น ลัง"
+                          disabled={busy}
+                        />
+                      </div>
+                      <div className="flex w-20 flex-col gap-1.5">
+                        <Label htmlFor="new-unit-qty">ตัวคูณ</Label>
+                        <Input
+                          id="new-unit-qty"
+                          type="number"
+                          min={1}
+                          step={1}
+                          value={unitQty}
+                          onChange={(event) => setUnitQty(event.target.value)}
+                          disabled={busy}
+                        />
+                      </div>
+                    </div>
+
+                    <p className="text-[0.7rem] text-muted-foreground">
+                      ตัวคูณ 1 = ใช้เป็นหน่วยหลักได้ · มากกว่า 1 = เพิ่มเข้าหน่วยอื่นให้เลย
+                    </p>
+
+                    {unitError && <p className="text-xs text-destructive">{unitError}</p>}
+
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleCreateUnit}
+                      disabled={busy || !unitName.trim() || Number(unitQty) < 1}
+                    >
+                      <Plus />
+                      เพิ่มหน่วยนับ
+                    </Button>
+                  </div>
+                )}
               </div>
 
               {/* หน่วยอาจมีเป็นร้อยตัว ชิปเรียงกันทั้งหมดจะยาวจนใช้ไม่ได้

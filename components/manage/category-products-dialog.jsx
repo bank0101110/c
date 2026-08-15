@@ -28,6 +28,7 @@ export function CategoryProductsDialog({
   category,
   products,
   unitTypes,
+  setUnitTypes,
   currentUser,
   onProductUpdated,
   onSkuCountChange,
@@ -114,6 +115,7 @@ export function CategoryProductsDialog({
                 <ProductRowActions
                   product={product}
                   unitTypes={unitTypes}
+                  setUnitTypes={setUnitTypes}
                   currentUser={currentUser}
                   onUpdated={onProductUpdated}
                   onSkuCountChange={onSkuCountChange}

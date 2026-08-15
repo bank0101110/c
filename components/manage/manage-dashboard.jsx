@@ -122,6 +122,7 @@ export function ManageDashboard({ products, unitTypes, categories, currentUser }
             setCategories={setCategoryList}
             products={productList}
             unitTypes={unitTypeList}
+            setUnitTypes={setUnitTypeList}
             currentUser={currentUser}
             onProductUpdated={handleProductUpdated}
             onSkuCountChange={handleSkuCountChange}

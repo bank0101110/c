@@ -26,6 +26,7 @@ export function CategoriesPanel({
   setCategories,
   products = [],
   unitTypes = [],
+  setUnitTypes,
   currentUser,
   onProductUpdated,
   onSkuCountChange,
@@ -231,6 +232,7 @@ export function CategoriesPanel({
                         category={category}
                         products={products}
                         unitTypes={unitTypes}
+                        setUnitTypes={setUnitTypes}
                         currentUser={currentUser}
                         onProductUpdated={onProductUpdated}
                         onSkuCountChange={onSkuCountChange}

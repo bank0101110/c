@@ -19,6 +19,7 @@ import { canManageProduct } from "@/lib/permissions";
 export function ProductRowActions({
   product,
   unitTypes,
+  setUnitTypes,
   currentUser,
   onUpdated,
   onSkuCountChange,
@@ -35,6 +36,7 @@ export function ProductRowActions({
           <SkusDialog
             product={product}
             unitTypes={unitTypes}
+            setUnitTypes={setUnitTypes}
             onCountChange={(count) => onSkuCountChange?.(product.id, count)}
           />
         </>
