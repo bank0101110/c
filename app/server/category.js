@@ -1,10 +1,37 @@
 import { prisma } from "@/prisma/prisma.js"
 
+/**
+ * หมวดทั้งหมด รวมหมวดว่างที่ยังไม่มีสินค้า
+ *
+ * หน้าจัดการกับช่องเลือกหมวดในหน้าสินค้าต้องเห็นครบ ไม่งั้นหมวดที่เพิ่งสร้าง (ยังไม่มีสินค้า)
+ * จะหายไปจนแก้ชื่อ/ลบ/ย้ายสินค้าเข้าไม่ได้เลย
+ */
 export async function getCategories() {
     try {
         return await prisma.category.findMany({
             orderBy: { name: "asc" },
             include: { _count: { select: { products: true } } },
+        })
+    } catch (error) {
+        console.error(error)
+        return []
+    }
+}
+
+/**
+ * เฉพาะหมวดที่มีสินค้าอยู่จริง — ใช้กับแถบกรองหน้าแรก
+ *
+ * เดิมดึงมาทั้งหมดแล้วให้ฝั่ง client กรองหมวดว่างทิ้งเอง = ส่งของที่ไม่ได้ใช้ข้ามเน็ตไปฟรี ๆ
+ * ทุกครั้งที่เปิดหน้าแรก คัดตั้งแต่ตอน query จบในตัว
+ *
+ * ไม่เอา _count มาด้วยเพราะแถบกรองไม่ได้โชว์จำนวน (ต่างจากหน้าจัดการที่โชว์)
+ */
+export async function getUsedCategories() {
+    try {
+        return await prisma.category.findMany({
+            where: { products: { some: {} } },
+            orderBy: { name: "asc" },
+            select: { id: true, name: true },
         })
     } catch (error) {
         console.error(error)

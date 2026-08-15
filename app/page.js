@@ -1,5 +1,5 @@
 import { getProducts } from "@/app/server/product";
-import { getCategories } from "@/app/server/category";
+import { getUsedCategories } from "@/app/server/category";
 import { getCurrentUser } from "@/app/server/session";
 import { Navbar } from "@/components/landing/navbar";
 import { Hero } from "@/components/landing/hero";
@@ -13,7 +13,7 @@ export default async function Home() {
   // หน้าแรกดูสต็อกได้โดยไม่ต้องล็อกอิน แต่จะตัดสต็อกต้องล็อกอินก่อน
   const [products, categories, currentUser] = await Promise.all([
     getProducts(),
-    getCategories(),
+    getUsedCategories(),
     getCurrentUser(),
   ]);
 

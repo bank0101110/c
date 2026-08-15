@@ -28,13 +28,26 @@ export const productDetailInclude = {
     },
 }
 
+/**
+ * ดันสินค้าที่ยังมีของขึ้นก่อน ของที่หมดแล้วไปกองล่างสุด
+ *
+ * เรียงด้วย orderBy ของ Prisma ตรง ๆ ไม่ได้ เพราะเงื่อนไขคือ "qty > 0 หรือไม่" ไม่ใช่ค่า qty
+ * (ถ้าเรียงด้วย qty ตรง ๆ ตัวที่มี 5000 ชิ้นจะกระโดดข้ามตัวที่มี 3 ชิ้น ทั้งที่ทั้งคู่ก็มีของ
+ * เหมือนกัน — สิ่งที่ต้องการคือแยกแค่ "มี" กับ "หมด")
+ *
+ * sort ของ JS เสถียร ลำดับเดิมจาก DB (ใหม่สุดขึ้นก่อน) จึงยังอยู่ครบภายในแต่ละกลุ่ม
+ */
+function inStockFirst(products) {
+    return products.sort((a, b) => (b.qty > 0) - (a.qty > 0))
+}
+
 export async function getProducts() {
     try {
         const products = await prisma.product.findMany({
             orderBy: { createdAt: "desc" },
             include: productInclude,
         })
-        return products
+        return inStockFirst(products)
     } catch (error) {
         console.error(error)
         return []
@@ -58,7 +71,7 @@ export async function getProductsByOwner(ownerId) {
             orderBy: { createdAt: "desc" },
             include: productInclude,
         })
-        return products
+        return inStockFirst(products)
     } catch (error) {
         console.error(error)
         return []

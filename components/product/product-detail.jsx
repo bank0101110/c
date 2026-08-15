@@ -25,9 +25,27 @@ import {
   setProductCategoryAction,
 } from "@/app/manage/actions";
 import { allowedStockTypes, canManageProduct } from "@/lib/permissions";
+import { skuUnits } from "@/lib/stock";
 
 // ค่าของ "ไม่มีหมวดหมู่" ใน Select — ใช้ string ว่างไม่ได้ Base UI ถือว่าเป็นยังไม่ได้เลือก
 const NO_CATEGORY = "none";
+
+// หน่วยเริ่มต้นแบบ "ตามหน่วยหลักของแต่ละตัวเลือก" (พฤติกรรมเดิม) แยกจาก id หน่วยจริง
+const AUTO_UNIT = "auto";
+
+/**
+ * หน่วยที่ควรถูกเลือกไว้ให้ตอนติ๊กตัวเลือกนี้
+ *
+ * ตัวเลือกแต่ละตัวรองรับหน่วยไม่เหมือนกัน ตัวที่ไม่มีหน่วยเริ่มต้นที่ตั้งไว้ก็ถอยไปใช้
+ * หน่วยหลักของตัวเอง ดีกว่าเลือกหน่วยที่ใช้กับมันไม่ได้แล้วโดน server ตีกลับทั้งชุด
+ */
+function unitForSku(sku, preferred) {
+  if (!sku) return "";
+  if (preferred !== AUTO_UNIT && skuUnits(sku).some((unit) => String(unit.id) === preferred)) {
+    return preferred;
+  }
+  return String(sku.unitTypeId);
+}
 
 const TYPES = [
   { value: "IN", label: "รับเข้า" },
@@ -42,6 +60,8 @@ export function ProductDetail({ product: initialProduct, categories = [], curren
   const [type, setType] = useState("OUT");
   const [note, setNote] = useState("");
   const [query, setQuery] = useState("");
+  // หน่วยที่จะถูกเลือกให้อัตโนมัติเวลาติ๊กตัวเลือกใหม่ — AUTO = ใช้หน่วยหลักของแต่ละตัว
+  const [defaultUnit, setDefaultUnit] = useState(AUTO_UNIT);
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [savingCategory, startCategory] = useTransition();
@@ -116,6 +136,28 @@ export function ProductDetail({ product: initialProduct, categories = [], curren
   const selectedIds = Object.keys(drafts).map(Number);
   const selectedCount = selectedIds.length;
 
+  // หน่วยทั้งหมดที่ตัวเลือกใด ๆ ในสินค้านี้ใช้ได้ — รวมจากทุก SKU แล้วตัดซ้ำ
+  const unitChoices = useMemo(() => {
+    const seen = new Map();
+    for (const sku of skus) {
+      for (const unit of skuUnits(sku)) {
+        if (!seen.has(unit.id)) seen.set(unit.id, unit);
+      }
+    }
+    return [...seen.values()].sort((a, b) => b.qty - a.qty || a.name.localeCompare(b.name));
+  }, [skus]);
+
+  // เหตุผลเดียวกับ categoryItems — Base UI ต้องได้ map value -> label ถึงจะโชว์ชื่อที่เลือก
+  const defaultUnitItems = useMemo(
+    () => ({
+      [AUTO_UNIT]: "หน่วยหลักของแต่ละตัว",
+      ...Object.fromEntries(
+        unitChoices.map((unit) => [String(unit.id), `${unit.name} (×${unit.qty})`])
+      ),
+    }),
+    [unitChoices]
+  );
+
   // toggle กับ changeDraft ถูกส่งเข้า SkuCard ที่ห่อ memo ไว้ ต้องคงตัวเดิมข้าม render
   // ไม่งั้น prop เปลี่ยนทุกครั้ง memo ก็ไม่ช่วยอะไร แล้วการพิมพ์ในช่องเดียวจะลาก
   // การ์ดทั้งหน้า (มีได้เป็นสิบ ๆ ใบ พร้อมรูปและ Select ของตัวเอง) มา re-render ด้วยทั้งหมด
@@ -129,13 +171,16 @@ export function ProductDetail({ product: initialProduct, categories = [], curren
         }
         next[skuId] = {
           amount: "",
-          // เลือกหน่วยหลักให้เลย ผู้ใช้จะได้กรอกแค่ตัวเลขในกรณีปกติ
-          unitTypeId: String(skus.find((item) => item.id === skuId)?.unitTypeId ?? ""),
+          // เลือกหน่วยให้เลย ผู้ใช้จะได้กรอกแค่ตัวเลขในกรณีปกติ
+          unitTypeId: unitForSku(
+            skus.find((item) => item.id === skuId),
+            defaultUnit
+          ),
         };
         return next;
       });
     },
-    [skus]
+    [skus, defaultUnit]
   );
 
   const changeDraft = useCallback((skuId, patch) => {
@@ -147,8 +192,25 @@ export function ProductDetail({ product: initialProduct, categories = [], curren
       const next = { ...prev };
       for (const sku of filteredSkus) {
         if (!next[sku.id]) {
-          next[sku.id] = { amount: "", unitTypeId: String(sku.unitTypeId) };
+          next[sku.id] = { amount: "", unitTypeId: unitForSku(sku, defaultUnit) };
         }
+      }
+      return next;
+    });
+  }
+
+  /**
+   * เปลี่ยนหน่วยของตัวที่ติ๊กไว้แล้วทั้งหมดให้เป็นหน่วยเริ่มต้น
+   *
+   * แยกเป็นปุ่มแทนที่จะให้เปลี่ยน default แล้วไล่ทับให้เองอัตโนมัติ เพราะบางตัวผู้ใช้
+   * ตั้งใจเลือกหน่วยเฉพาะของมันไว้ ทับทิ้งเงียบ ๆ แล้วบันทึกไปจะยิ่งผิดหนักกว่าเดิม
+   */
+  function applyDefaultToSelected() {
+    setDrafts((prev) => {
+      const next = {};
+      for (const [skuId, draft] of Object.entries(prev)) {
+        const sku = skus.find((item) => item.id === Number(skuId));
+        next[skuId] = { ...draft, unitTypeId: unitForSku(sku, defaultUnit) };
       }
       return next;
     });
@@ -343,6 +405,47 @@ export function ProductDetail({ product: initialProduct, categories = [], curren
                   placeholder={`ค้นหาในตัวเลือกทั้ง ${skus.length} รายการ`}
                   className="pl-9"
                 />
+              </div>
+            )}
+
+            {/* หน่วยเริ่มต้น — คนที่ตัดสต็อกเป็นลัง/แพ็คทั้งวันจะได้ไม่ต้องเปลี่ยนหน่วยทีละใบ
+                (เผลอลืมเปลี่ยนแล้วยอดหายเป็นเท่าตัว) ขึ้นเฉพาะตอนมีหน่วยให้เลือกจริง ๆ */}
+            {unitChoices.length > 1 && (
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed p-2.5">
+                <Label htmlFor="default-unit" className="text-xs font-medium">
+                  หน่วยเริ่มต้น
+                </Label>
+                <Select
+                  items={defaultUnitItems}
+                  value={defaultUnit}
+                  onValueChange={setDefaultUnit}
+                  disabled={isPending}
+                >
+                  <SelectTrigger id="default-unit" size="sm" className="w-auto min-w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={AUTO_UNIT}>หน่วยหลักของแต่ละตัว</SelectItem>
+                    {unitChoices.map((unit) => (
+                      <SelectItem key={unit.id} value={String(unit.id)}>
+                        {unit.name} (×{unit.qty})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {selectedCount > 0 && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-9 sm:h-8"
+                    disabled={isPending}
+                    onClick={applyDefaultToSelected}
+                  >
+                    ใช้กับที่เลือกไว้ {selectedCount} ตัว
+                  </Button>
+                )}
               </div>
             )}
 

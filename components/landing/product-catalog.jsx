@@ -31,17 +31,8 @@ export function ProductCatalog({ products, categories = [] }) {
   // แล้วค่อยตามด้วยรายการที่กรองแล้ว ช่องค้นหาจะได้ไม่หนืดตอนพิมพ์รัว
   const deferredQuery = useDeferredValue(query);
 
-  // โชว์เฉพาะหมวดที่มีสินค้าอยู่จริง หมวดว่างเปล่าไม่ต้องรกแถบกรอง
-  const usedCategories = useMemo(() => {
-    const counts = new Map();
-    for (const product of productList) {
-      if (product.categoryId) {
-        counts.set(product.categoryId, (counts.get(product.categoryId) ?? 0) + 1);
-      }
-    }
-    return categories.filter((category) => counts.has(category.id));
-  }, [categories, productList]);
-
+  // categories ที่ส่งมาถูกคัดเหลือเฉพาะหมวดที่มีสินค้าจริงมาตั้งแต่ตอน query แล้ว
+  // (getUsedCategories) ที่นี่จึงไม่ต้องไล่นับซ้ำ
   const hasUncategorized = useMemo(
     () => productList.some((product) => !product.categoryId),
     [productList]
@@ -105,7 +96,7 @@ export function ProductCatalog({ products, categories = [] }) {
   return (
     <section id="products" className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6">
       {/* แถบกรองหมวดหมู่ — ขึ้นเฉพาะตอนมีหมวดให้เลือกจริง */}
-      {(usedCategories.length > 0 || hasUncategorized) && (
+      {(categories.length > 0 || hasUncategorized) && (
         <div className="mb-5 flex flex-wrap gap-1.5">
           <Button
             size="sm"
@@ -116,7 +107,7 @@ export function ProductCatalog({ products, categories = [] }) {
           >
             ทั้งหมด
           </Button>
-          {usedCategories.map((category) => (
+          {categories.map((category) => (
             <Button
               key={category.id}
               size="sm"
