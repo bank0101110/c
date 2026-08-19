@@ -1,10 +1,11 @@
 "use client";
 
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { PackageX } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { ProductCard } from "@/components/landing/product-card";
 import { useSearch } from "@/components/landing/search-context";
 import { useUrlState } from "@/lib/use-url-state";
@@ -18,7 +19,8 @@ const PAGE_SIZE = 60;
 
 export function ProductCatalog({ products, categories = [] }) {
   // ช่องกรอกย้ายไปอยู่ที่ navbar แล้ว ที่นี่เหลือแค่อ่านคำค้นมากรอง
-  const { query, index } = useSearch();
+  // deferredQuery/isSearching มาจาก context เพราะช่องค้นหาที่ navbar ก็ต้องใช้ตัวเดียวกัน
+  const { deferredQuery, isSearching, index } = useSearch();
   // การปรับสต็อกย้ายไปทำที่หน้าสินค้าแล้ว ที่นี่จึงไม่ต้องถือสำเนารายการไว้แก้เอง
   const productList = products;
   // อยู่ใน URL ไม่ใช่ useState เพื่อให้เข้าหน้าสินค้าแล้วย้อนกลับมาแล้วหมวดที่เลือกยังอยู่
@@ -26,10 +28,6 @@ export function ProductCatalog({ products, categories = [] }) {
   const [activeCategory, setActiveCategory] = useUrlState("cat", ALL);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const sentinelRef = useRef(null);
-
-  // การกรองหนักกว่าการอัปเดตช่องพิมพ์มาก — ปล่อยให้ตัวอักษรขึ้นจอก่อน
-  // แล้วค่อยตามด้วยรายการที่กรองแล้ว ช่องค้นหาจะได้ไม่หนืดตอนพิมพ์รัว
-  const deferredQuery = useDeferredValue(query);
 
   // categories ที่ส่งมาถูกคัดเหลือเฉพาะหมวดที่มีสินค้าจริงมาตั้งแต่ตอน query แล้ว
   // (getUsedCategories) ที่นี่จึงไม่ต้องไล่นับซ้ำ
@@ -133,7 +131,16 @@ export function ProductCatalog({ products, categories = [] }) {
         </div>
       )}
 
-      {filteredProducts.length === 0 ? (
+      {/* ยังกรองไม่เสร็จ อย่าเพิ่งบอกว่า "ไม่พบสินค้า" — ผลลัพธ์ที่เห็นอยู่เป็นของคำค้นก่อนหน้า
+          ระหว่างนี้หรี่รายการลงแล้วขึ้นตัวหมุนแทน จะได้รู้ว่ากำลังทำงานอยู่ ไม่ใช่ค้างไปเฉย ๆ */}
+      {isSearching && (
+        <div className="mb-4 flex items-center justify-center gap-2 rounded-full border border-border bg-muted/40 py-2 text-xs text-muted-foreground">
+          <Spinner className="size-3.5" />
+          กำลังค้นหา…
+        </div>
+      )}
+
+      {filteredProducts.length === 0 && !isSearching ? (
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border py-20 text-center text-muted-foreground">
           <PackageX className="size-8" />
           <p className="text-sm">
@@ -143,7 +150,11 @@ export function ProductCatalog({ products, categories = [] }) {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+        <div
+          className={`grid grid-cols-3 gap-2.5 transition-opacity duration-200 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 ${
+            isSearching ? "opacity-40" : "opacity-100"
+          }`}
+        >
           {/* ทุกใบเข้าหน้าสินค้าเหมือนกันหมด สินค้าที่ยังไม่มีตัวเลือกย่อยจะถูกมองเป็น
               ตัวเลือกเดียวที่หน้านั้น ผู้ใช้เลยไม่เจอสองพฤติกรรมที่ต่างกันโดยไม่รู้ตัว */}
           {visibleProducts.map((product) => (
@@ -162,7 +173,8 @@ export function ProductCatalog({ products, categories = [] }) {
       {/* จุดสังเกตท้ายรายการ — เลื่อนมาถึงเมื่อไหร่ค่อยวาดชุดถัดไป */}
       {hasMore && (
         <div ref={sentinelRef} className="flex justify-center py-8">
-          <span className="text-xs text-muted-foreground">
+          <span className="flex items-center gap-2 rounded-full border border-border bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">
+            <Spinner className="size-3.5" />
             กำลังโหลดเพิ่ม… ({visibleProducts.length}/{filteredProducts.length})
           </span>
         </div>

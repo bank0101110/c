@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useMemo } from "react";
+import { createContext, useContext, useDeferredValue, useMemo } from "react";
 
 import { useUrlState } from "@/lib/use-url-state";
 
@@ -25,9 +25,19 @@ export function SearchProvider({ products = [], children }) {
     [products]
   );
 
+  /**
+   * การกรองหนักกว่าการอัปเดตช่องพิมพ์มาก — ปล่อยให้ตัวอักษรขึ้นจอก่อน แล้วค่อยตามด้วย
+   * รายการที่กรองแล้ว ช่องค้นหาจะได้ไม่หนืดตอนพิมพ์รัว
+   *
+   * อยู่ที่ context ไม่ใช่ใน ProductCatalog เพราะช่องค้นหาที่ navbar ต้องรู้ด้วยว่า
+   * ผลลัพธ์ตามมาทันหรือยัง จะได้ขึ้นตัวหมุนบอกว่ากำลังค้นอยู่
+   */
+  const deferredQuery = useDeferredValue(query);
+  const isSearching = query !== deferredQuery;
+
   const value = useMemo(
-    () => ({ query, setQuery, products, index }),
-    [query, setQuery, products, index]
+    () => ({ query, setQuery, deferredQuery, isSearching, products, index }),
+    [query, setQuery, deferredQuery, isSearching, products, index]
   );
 
   return <SearchContext.Provider value={value}>{children}</SearchContext.Provider>;

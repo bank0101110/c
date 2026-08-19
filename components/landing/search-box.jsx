@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Search, X } from "lucide-react";
+import { Clock, Search, X } from "lucide-react";
 
 import { siteConfig } from "@/lib/site-config";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import { useSearch } from "@/components/landing/search-context";
+import { useSearchHistory } from "@/lib/use-search-history";
 
 const MAX_SUGGESTIONS = 6;
 
@@ -22,7 +24,8 @@ function splitMatch(name, query) {
  * แยกออกมาเป็นตัวเดียวเพื่อไม่ต้องเขียนตรรกะ autocomplete ซ้ำสองที่
  */
 function SearchField({ inputRef, onEscape, className }) {
-  const { query, setQuery, index } = useSearch();
+  const { query, setQuery, index, isSearching } = useSearch();
+  const { history, remember, forget, clear } = useSearchHistory();
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const listId = useId();
@@ -54,11 +57,27 @@ function SearchField({ inputRef, onEscape, className }) {
     return [...starts, ...contains].slice(0, MAX_SUGGESTIONS);
   }, [index, query]);
 
-  const showList = isOpen && suggestions.length > 0;
+  /**
+   * ยังไม่พิมพ์อะไร = โชว์คำที่เคยค้น พิมพ์แล้ว = โชว์สินค้าที่ตรงกับคำนั้น
+   *
+   * รวมเป็นรายการเดียวกันเพื่อให้ปุ่มลูกศร/Enter ใช้ตรรกะชุดเดียว ไม่ต้องแยกสองทาง
+   */
+  const items = useMemo(() => {
+    if (query.trim()) {
+      return suggestions.map((product) => ({
+        key: `product-${product.id}`,
+        name: product.name,
+        recent: false,
+      }));
+    }
+    return history.map((term) => ({ key: `recent-${term}`, name: term, recent: true }));
+  }, [query, suggestions, history]);
+
+  const showList = isOpen && items.length > 0;
 
   // คำค้นถูกแก้จากที่อื่นได้ด้วย (เช่นกดปิดช่องค้นหาบนมือถือแล้วล้างคำ)
   // ตัวที่ไฮไลต์ไว้อาจชี้เลยขอบรายการใหม่ เลยหนีบให้อยู่ในช่วงเสมอตอน render
-  const activeItem = activeIndex < suggestions.length ? activeIndex : -1;
+  const activeItem = activeIndex < items.length ? activeIndex : -1;
 
   /** ปิดรายการแนะนำ + ถอนโฟกัส เพื่อให้คีย์บอร์ดมือถือหุบ จะได้เห็นผลลัพธ์เต็มจอ */
   function dismiss() {
@@ -69,6 +88,7 @@ function SearchField({ inputRef, onEscape, className }) {
 
   function pick(name) {
     setQuery(name);
+    remember(name);
     dismiss();
   }
 
@@ -88,8 +108,12 @@ function SearchField({ inputRef, onEscape, className }) {
     if (event.key === "Enter") {
       event.preventDefault();
       // เลื่อนไฮไลต์ค้างไว้ที่รายการไหน ให้ถือว่าเลือกอันนั้น
-      if (showList && activeItem >= 0) pick(suggestions[activeItem].name);
-      else dismiss();
+      if (showList && activeItem >= 0) pick(items[activeItem].name);
+      else {
+        // กด Enter เฉย ๆ = ค้นด้วยคำที่พิมพ์ไว้ ถือเป็นการค้นจริง เก็บเข้าประวัติ
+        remember(query);
+        dismiss();
+      }
       return;
     }
 
@@ -100,10 +124,10 @@ function SearchField({ inputRef, onEscape, className }) {
 
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setActiveIndex((prev) => (prev + 1) % suggestions.length);
+      setActiveIndex((prev) => (prev + 1) % items.length);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      setActiveIndex((prev) => (prev <= 0 ? suggestions.length - 1 : prev - 1));
+      setActiveIndex((prev) => (prev <= 0 ? items.length - 1 : prev - 1));
     }
   }
 
@@ -134,8 +158,14 @@ function SearchField({ inputRef, onEscape, className }) {
             activeItem >= 0 ? `${listId}-${activeItem}` : undefined
           }
           aria-autocomplete="list"
-          className="h-9 pl-8"
+          className="h-9 pr-8 pl-8"
         />
+
+        {/* ตัวหมุนบอกว่ารายการข้างล่างยังตามคำค้นไม่ทัน — พิมพ์รัว ๆ จะเห็นมันหมุนอยู่
+            จนกว่าผลลัพธ์ชุดใหม่จะขึ้นครบ */}
+        {isSearching && (
+          <Spinner className="absolute top-1/2 right-2.5 -translate-y-1/2 text-muted-foreground" />
+        )}
       </div>
 
       {showList && (
@@ -144,10 +174,11 @@ function SearchField({ inputRef, onEscape, className }) {
           role="listbox"
           className="absolute inset-x-0 top-full z-50 mt-1.5 overflow-hidden rounded-xl bg-dropdown p-1 shadow-lg ring-1 ring-border"
         >
-          {suggestions.map((product, index) => {
-            const [before, match, after] = splitMatch(product.name, query.trim());
+          {items.map((item, index) => {
+            const [before, match, after] = splitMatch(item.name, query.trim());
             return (
-              <li key={product.id}>
+              // li เป็นแค่โครง ตัวที่เป็น option จริงคือปุ่มข้างใน (aria-activedescendant ชี้ที่นั่น)
+              <li key={item.key} role="presentation" className="flex items-center">
                 <button
                   type="button"
                   id={`${listId}-${index}`}
@@ -155,22 +186,56 @@ function SearchField({ inputRef, onEscape, className }) {
                   aria-selected={index === activeItem}
                   // ต้องกันไม่ให้ input เสีย focus ก่อน ไม่งั้น blur ปิดรายการทิ้งก่อนกดโดน
                   onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => pick(product.name)}
+                  onClick={() => pick(item.name)}
                   onMouseEnter={() => setActiveIndex(index)}
-                  className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors sm:py-1.5 ${
+                  className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors sm:py-1.5 ${
                     index === activeItem ? "bg-accent text-accent-foreground" : ""
                   }`}
                 >
-                  <Search className="size-3.5 shrink-0 text-muted-foreground" />
+                  {item.recent ? (
+                    <Clock className="size-3.5 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <Search className="size-3.5 shrink-0 text-muted-foreground" />
+                  )}
                   <span className="truncate">
                     {before}
                     <span className="font-semibold">{match}</span>
                     {after}
                   </span>
                 </button>
+
+                {/* ลบทีละคำ — ปุ่มแยกจากปุ่มเลือก ซ้อนปุ่มในปุ่มไม่ได้ */}
+                {item.recent && (
+                  <button
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => forget(item.name)}
+                    aria-label={`ลบ ${item.name} ออกจากประวัติ`}
+                    className="mr-1 rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                )}
               </li>
             );
           })}
+
+          {/* ล้างทั้งก้อน — ขึ้นเฉพาะตอนที่รายการที่โชว์อยู่คือประวัติ */}
+          {items[0]?.recent && (
+            <li role="presentation" className="mt-1 border-t border-border pt-1">
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  clear();
+                  setActiveIndex(-1);
+                }}
+                className="w-full rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              >
+                ล้างประวัติการค้นหา
+              </button>
+            </li>
+          )}
         </ul>
       )}
     </div>
