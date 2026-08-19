@@ -7,8 +7,9 @@ const nextConfig = {
   experimental: {
     serverActions: {
       // อัปโหลดรูปส่งผ่าน Server Action ซึ่ง default จำกัดที่ 1MB
-      // ตั้ง 6mb เผื่อ overhead ของ multipart (ตัวไฟล์จริงจำกัด 5MB ในโค้ดอีกที)
-      bodySizeLimit: "6mb",
+      // ตั้ง 12mb เผื่อ overhead ของ multipart (ตัวไฟล์จริงจำกัด 10MB ในโค้ดอีกที)
+      // รูปจากกล้องถูกย่อฝั่ง client ก่อนส่งอยู่แล้ว ปกติจึงไม่เข้าใกล้เพดานนี้
+      bodySizeLimit: "12mb",
     },
   },
 };

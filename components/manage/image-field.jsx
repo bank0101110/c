@@ -6,13 +6,24 @@ import { ImageOff, Link2, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
 import { uploadProductImageAction } from "@/app/manage/actions";
+import { compressImage } from "@/lib/compress-image";
 
 const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,image/avif";
 
-// เช็คคร่าว ๆ ตรงนี้เพื่อบอกผู้ใช้ทันทีที่เลือกไฟล์ ไม่ต้องรอถึงตอนกดบันทึก
+// รูปจากกล้องมือถือ 5-15 MB เป็นเรื่องปกติ เลยรับไฟล์ใหญ่ได้ถึง 30 MB แล้วย่อให้เอง
+// ก่อนอัปโหลด (compressImage) — ที่ถึงเซิร์ฟเวอร์จริงจะเหลือหลักร้อย KB
+//
+// เช็คตรงนี้เพื่อบอกผู้ใช้ทันทีที่เลือกไฟล์ ไม่ต้องรอถึงตอนกดบันทึก
 // ของจริงเซิร์ฟเวอร์เช็คซ้ำอีกรอบใน lib/supabase-storage.js เพราะฝั่ง client เชื่อไม่ได้
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_SOURCE_BYTES = 30 * 1024 * 1024;
+
+// เพดานหลังย่อแล้ว ต้องไม่เกินของฝั่งเซิร์ฟเวอร์ (10 MB) — ไฟล์ที่ย่อไม่ได้จริง ๆ
+// (เช่น GIF เคลื่อนไหวไฟล์ใหญ่) จะมาตกตรงนี้ แล้วบอกผู้ใช้ตั้งแต่ตอนเลือก
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+const formatMb = (bytes) => Math.round(bytes / 1024 / 1024);
 
 /**
  * อัปโหลดไฟล์ที่ผู้ใช้เลือกค้างไว้ — ให้ฟอร์มเรียกตอนกดบันทึก
@@ -61,9 +72,11 @@ export function ImageField({
 }) {
   const [mode, setMode] = useState("upload");
   const [error, setError] = useState(null);
+  const [compressing, setCompressing] = useState(false);
   const fileInputRef = useRef(null);
 
-  const busy = disabled;
+  // ห้ามให้กดบันทึกระหว่างย่อรูป ไม่งั้นฟอร์มจะอัปไฟล์ต้นฉบับที่ยังไม่ถูกแทนที่
+  const busy = disabled || compressing;
 
   // พรีวิวจากไฟล์ในเครื่อง ไม่ต้องรอ network
   const previewUrl = useMemo(
@@ -77,7 +90,7 @@ export function ImageField({
     return () => URL.revokeObjectURL(previewUrl);
   }, [previewUrl]);
 
-  function handleFile(event) {
+  async function handleFile(event) {
     const file = event.target.files?.[0];
     // เคลียร์ค่า input ทันที ไม่งั้นเลือกไฟล์เดิมซ้ำจะไม่ยิง onChange อีก
     event.target.value = "";
@@ -87,15 +100,31 @@ export function ImageField({
       setError("รองรับเฉพาะไฟล์ JPG, PNG, WebP, GIF และ AVIF");
       return;
     }
-    if (file.size > MAX_IMAGE_BYTES) {
-      setError(`ไฟล์ใหญ่เกิน ${MAX_IMAGE_BYTES / 1024 / 1024} MB`);
+    if (file.size > MAX_SOURCE_BYTES) {
+      setError(`ไฟล์ใหญ่เกิน ${formatMb(MAX_SOURCE_BYTES)} MB`);
       return;
     }
 
     setError(null);
     // ไฟล์ใหม่มาแทนลิงก์เดิมเสมอ ไม่งั้นจะงงว่าตกลงจะเอารูปไหน
     onChange("");
-    onPendingFileChange(file);
+
+    // ไฟล์ที่ยังไม่เกินเพดานอยู่แล้ว ส่งให้ฟอร์มถือไว้ก่อนเลย พรีวิวจะได้ขึ้นทันที
+    // และถ้าผู้ใช้กดบันทึกระหว่างที่ยังย่อไม่เสร็จ ก็ยังได้รูป (แค่ไฟล์ใหญ่กว่าที่ควร)
+    if (file.size <= MAX_UPLOAD_BYTES) onPendingFileChange(file);
+
+    setCompressing(true);
+    // รูปจากกล้องต้องย่อก่อน ไม่งั้นชนเพดาน body ของ Server Action และอัปนานมากบนเน็ตมือถือ
+    const ready = await compressImage(file);
+    setCompressing(false);
+
+    if (ready.size > MAX_UPLOAD_BYTES) {
+      onPendingFileChange(null);
+      setError(`ย่อรูปแล้วยังใหญ่เกิน ${formatMb(MAX_UPLOAD_BYTES)} MB — ลองถ่ายใหม่หรือใช้รูปอื่น`);
+      return;
+    }
+
+    onPendingFileChange(ready);
   }
 
   function clearImage() {
@@ -165,12 +194,17 @@ export function ImageField({
                 disabled={busy}
                 onClick={() => fileInputRef.current?.click()}
               >
-                <Upload />
-                {previewUrl || value ? "เปลี่ยนรูป" : "เลือกไฟล์รูป"}
+                {compressing ? <Spinner /> : <Upload />}
+                {compressing
+                  ? "กำลังย่อรูป…"
+                  : previewUrl || value
+                    ? "เปลี่ยนรูป"
+                    : "เลือกไฟล์รูป"}
               </Button>
               {/* เหลือไว้แค่ข้อจำกัดของไฟล์ ซึ่งผู้ใช้ต้องรู้ก่อนเลือก ที่เหลือเป็นกลไกหลังบ้าน */}
               <p className="text-xs text-muted-foreground">
-                JPG, PNG, WebP, GIF, AVIF ไม่เกิน 5 MB
+                ถ่ายจากมือถือได้เลย ระบบย่อรูปให้อัตโนมัติ — JPG, PNG, WebP, GIF, AVIF ไม่เกิน{" "}
+                {formatMb(MAX_SOURCE_BYTES)} MB
               </p>
             </>
           ) : (
