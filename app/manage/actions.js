@@ -21,7 +21,14 @@ import {
     getProductHistory,
     writeStockHistory,
 } from "@/app/server/productHistory"
-import { createSku, deleteSku, getSkuGuard, saveSku, setSkusUnits } from "@/app/server/sku"
+import {
+    createSku,
+    deleteSku,
+    getSkuGuard,
+    saveSku,
+    setSkusDefaultUnit,
+    setSkusUnits,
+} from "@/app/server/sku"
 import {
     createCategory,
     deleteCategory,
@@ -385,13 +392,16 @@ export async function createSkuAction(
     unitTypeId,
     qty = 0,
     extraUnitTypeIds = [],
-    code = null
+    code = null,
+    defaultUnitTypeId = null
 ) {
     const id = toId(productId)
     const trimmed = String(name ?? "").trim()
     const baseUnitId = toId(unitTypeId)
     const startQty = toCount(qty)
     const extraIds = toIdList(extraUnitTypeIds)
+    // ตั้งมาเป็นหน่วยที่ตัวเลือกนี้ใช้ไม่ได้ ฝั่ง server จะปัดทิ้งให้เอง ไม่ต้องตีกลับทั้งฟอร์ม
+    const defaultUnitId = toId(defaultUnitTypeId)
 
     const user = await requireUser()
     if (!user) return UNAUTHORIZED
@@ -420,18 +430,28 @@ export async function createSkuAction(
         baseUnitId,
         startQty,
         extraIds,
-        String(code ?? "").trim() || null
+        String(code ?? "").trim() || null,
+        defaultUnitId
     )
     if (!sku) return { ok: false, error: "เพิ่มตัวเลือกไม่สำเร็จ (ชื่ออาจซ้ำกับที่มีอยู่)" }
 
     return { ok: true, sku }
 }
 
-export async function saveSkuAction(skuId, name, imageUrl, unitTypeId, extraUnitTypeIds = [], code = null) {
+export async function saveSkuAction(
+    skuId,
+    name,
+    imageUrl,
+    unitTypeId,
+    extraUnitTypeIds = [],
+    code = null,
+    defaultUnitTypeId = null
+) {
     const id = toId(skuId)
     const trimmed = String(name ?? "").trim()
     const baseUnitId = toId(unitTypeId)
     const extraIds = toIdList(extraUnitTypeIds)
+    const defaultUnitId = toId(defaultUnitTypeId)
 
     const [user, current] = await Promise.all([requireUser(), id ? getSkuGuard(id) : null])
 
@@ -460,7 +480,8 @@ export async function saveSkuAction(skuId, name, imageUrl, unitTypeId, extraUnit
         String(imageUrl ?? "").trim() || null,
         baseUnitId,
         extraIds,
-        String(code ?? "").trim() || null
+        String(code ?? "").trim() || null,
+        defaultUnitId
     )
     if (!sku) return { ok: false, error: "แก้ตัวเลือกไม่สำเร็จ" }
 
@@ -504,6 +525,40 @@ export async function setSkusUnitsAction(skuIds, unitTypeId, extraUnitTypeIds = 
     if (!skus) return { ok: false, error: "ตั้งหน่วยไม่สำเร็จ" }
 
     return { ok: true, skus }
+}
+
+/**
+ * ตั้งหน่วยเริ่มต้นให้หลายตัวเลือกพร้อมกัน — หน่วยที่หน้าสินค้าจะเลือกให้คนที่มากดตัดสต็อก
+ *
+ * unitTypeId = null คือกลับไปใช้หน่วยหลักของแต่ละตัว
+ * ตัวที่ไม่รองรับหน่วยนั้นจะถูกข้าม (ไม่ใช่ error ทั้งชุด) แล้วบอกจำนวนกลับไปให้ UI
+ */
+export async function setSkusDefaultUnitAction(skuIds, unitTypeId) {
+    const ids = toIdList(skuIds)
+    // null = ล้างกลับไปใช้หน่วยหลัก ต่างจาก id ที่ส่งมาผิดรูปแบบ
+    const defaultUnitId = unitTypeId === null ? null : toId(unitTypeId)
+
+    const user = await requireUser()
+    if (!user) return UNAUTHORIZED
+    if (!ids || ids.length === 0) return { ok: false, error: "ยังไม่ได้เลือกตัวเลือก" }
+    if (unitTypeId !== null && !defaultUnitId) return { ok: false, error: "เลือกหน่วยเริ่มต้น" }
+
+    if (defaultUnitId) {
+        const unit = await getUnitType(defaultUnitId)
+        if (!unit) return { ok: false, error: "ไม่พบหน่วยที่เลือก" }
+    }
+
+    const guards = await Promise.all(ids.map((id) => getSkuGuard(id)))
+    if (guards.some((sku) => !sku)) return { ok: false, error: "ไม่พบตัวเลือกบางรายการ" }
+    if (guards.some((sku) => !canManageProduct(sku.product, user))) return FORBIDDEN
+    if (new Set(guards.map((sku) => sku.productId)).size > 1) {
+        return { ok: false, error: "ตัวเลือกต้องอยู่สินค้าเดียวกัน" }
+    }
+
+    const result = await setSkusDefaultUnit(ids, defaultUnitId)
+    if (!result) return { ok: false, error: "ตั้งหน่วยเริ่มต้นไม่สำเร็จ" }
+
+    return { ok: true, ...result }
 }
 
 export async function deleteSkuAction(skuId) {

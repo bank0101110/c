@@ -21,11 +21,19 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { ImageField, uploadPendingImage } from "@/components/manage/image-field";
 import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import {
   createSkuAction,
   createUnitTypeAction,
   deleteSkuAction,
   getProductSkusAction,
   saveSkuAction,
+  setSkusDefaultUnitAction,
   setSkusUnitsAction,
 } from "@/app/manage/actions";
 import {
@@ -55,6 +63,9 @@ import {
 } from "@/lib/stock";
 import { thumbnailUrl } from "@/lib/images";
 
+// "ใช้หน่วยหลัก" ใน Select — ใช้ string ว่างไม่ได้ Base UI ถือว่าเป็นยังไม่ได้เลือก
+const BASE_DEFAULT = "base";
+
 /** ฟอร์มเปล่าสำหรับเพิ่มตัวเลือกใหม่ */
 function emptyDraft(baseOptions) {
   return {
@@ -67,12 +78,22 @@ function emptyDraft(baseOptions) {
     unitTypeId: baseOptions.length === 1 ? String(baseOptions[0].id) : "",
     // หน่วยเสริม เช่น ลัง (×12) — ตัวเลือกเดียวใช้ได้หลายหน่วย
     extraUnitIds: new Set(),
+    // หน่วยที่หน้าสินค้าจะเลือกให้ตอนคนมากดตัดสต็อก — BASE_DEFAULT = ใช้หน่วยหลัก
+    defaultUnitId: BASE_DEFAULT,
     qty: "0",
   };
 }
 
+/** หน่วยเริ่มต้นต้องอยู่ในชุดหน่วยของตัวเลือกเสมอ ถอดหน่วยนั้นออกก็ต้องถอยไปใช้หน่วยหลัก */
+function keepDefaultUnit(defaultUnitId, unitTypeId, extraUnitIds) {
+  if (defaultUnitId === BASE_DEFAULT) return BASE_DEFAULT;
+  const allowed = new Set([String(unitTypeId), ...[...extraUnitIds].map(String)]);
+  return allowed.has(defaultUnitId) ? defaultUnitId : BASE_DEFAULT;
+}
+
 function SkuRow({ sku, onEdit, onDelete, busy, selected, onToggle }) {
   const units = skuUnits(sku);
+  const defaultUnit = units.find((unit) => unit.id === sku.defaultUnitTypeId);
 
   return (
     <div
@@ -117,6 +138,12 @@ function SkuRow({ sku, onEdit, onDelete, busy, selected, onToggle }) {
             คงเหลือ {sku.qty} {units.at(-1)?.name ?? ""}
             {units.length > 1 && ` · ${units.length} หน่วย`}
           </span>
+          {/* ตัวที่ยังไม่ได้ตั้งไม่ต้องโชว์ — หน้าสินค้าจะใช้หน่วยหลักอยู่แล้ว */}
+          {defaultUnit && (
+            <Badge variant="secondary" className="text-[0.65rem]">
+              เริ่มต้น {defaultUnit.name} (×{defaultUnit.qty})
+            </Badge>
+          )}
         </div>
       </div>
 
@@ -157,6 +184,7 @@ export function SkusDialog({ product, unitTypes, setUnitTypes, onCountChange }) 
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkUnitId, setBulkUnitId] = useState("");
   const [bulkExtraIds, setBulkExtraIds] = useState(() => new Set());
+  const [bulkDefaultUnitId, setBulkDefaultUnitId] = useState("");
   // ฟอร์มสร้างหน่วยในตัว — หน่วยที่ต้องใช้มักนึกออกตอนกรอก SKU ไม่ใช่ตอนอยู่แท็บหน่วยนับ
   const [showNewUnit, setShowNewUnit] = useState(false);
   const [unitName, setUnitName] = useState("");
@@ -178,6 +206,24 @@ export function SkusDialog({ product, unitTypes, setUnitTypes, onCountChange }) 
   const selectedExtraOptions = useMemo(
     () => extraOptions.filter((option) => draft?.extraUnitIds?.has(option.id)),
     [extraOptions, draft?.extraUnitIds]
+  );
+
+  // หน่วยเริ่มต้นตั้งได้เฉพาะหน่วยที่ตัวเลือกนี้รองรับ = หน่วยหลัก + หน่วยเสริมที่เลือกไว้
+  const draftUnits = useMemo(() => {
+    if (!draft) return [];
+    const ids = new Set([Number(draft.unitTypeId), ...draft.extraUnitIds]);
+    return sortUnits(unitTypes.filter((unitType) => ids.has(unitType.id)));
+  }, [unitTypes, draft]);
+
+  // Base UI ต้องได้ map value -> label ถึงจะโชว์ชื่อหน่วยที่เลือกบนปุ่มแทน id ดิบ
+  const draftUnitItems = useMemo(
+    () => ({
+      [BASE_DEFAULT]: "ใช้หน่วยหลัก",
+      ...Object.fromEntries(
+        draftUnits.map((unit) => [String(unit.id), `${unit.name} (×${unit.qty})`])
+      ),
+    }),
+    [draftUnits]
   );
 
   function load() {
@@ -224,6 +270,11 @@ export function SkusDialog({ product, unitTypes, setUnitTypes, onCountChange }) 
   const bulkSelectedBase =
     baseUnitOptions.find((option) => String(option.id) === bulkUnitId) ?? null;
 
+  // หน่วยเริ่มต้นแบบหมู่เลือกได้จากหน่วยทั้งระบบ ตัวที่ SKU ไหนไม่รองรับ server จะข้ามให้
+  const allUnitOptions = useMemo(() => unitOptions(unitTypes), [unitTypes]);
+  const bulkSelectedDefault =
+    allUnitOptions.find((option) => String(option.id) === bulkDefaultUnitId) ?? null;
+
   function applyBulkUnits() {
     if (selectedIds.size === 0 || !bulkUnitId) return;
 
@@ -244,6 +295,44 @@ export function SkusDialog({ product, unitTypes, setUnitTypes, onCountChange }) 
       setSkus((prev) => (prev ?? []).map((sku) => updated.get(sku.id) ?? sku));
       setSelectedIds(new Set());
       toast({ variant: "success", title: `ตั้งหน่วยให้ ${result.skus.length} ตัวเลือกแล้ว` });
+    });
+  }
+
+  /**
+   * ตั้งหน่วยเริ่มต้นให้ตัวที่ติ๊กไว้ — unitId = null คือกลับไปใช้หน่วยหลัก
+   *
+   * ไม่ล้างที่เลือกไว้หลังทำเสร็จ (ต่างจากตั้งหน่วยหลัก) เพราะถ้ามีตัวที่ถูกข้าม
+   * ผู้ใช้มักอยากไล่เพิ่มหน่วยให้ตัวนั้นแล้วกดซ้ำอีกที
+   */
+  function applyBulkDefaultUnit(unitId) {
+    if (selectedIds.size === 0) return;
+
+    const ids = [...selectedIds];
+    startTransition(async () => {
+      const result = await setSkusDefaultUnitAction(ids, unitId);
+      if (!result.ok) {
+        toast({
+          variant: "destructive",
+          title: "ตั้งหน่วยเริ่มต้นไม่สำเร็จ",
+          description: result.error,
+          duration: 0,
+        });
+        return;
+      }
+
+      const updated = new Map(result.skus.map((sku) => [sku.id, sku]));
+      setSkus((prev) => (prev ?? []).map((sku) => updated.get(sku.id) ?? sku));
+      toast({
+        variant: "success",
+        title:
+          unitId === null
+            ? `กลับไปใช้หน่วยหลักให้ ${result.appliedCount} ตัวเลือกแล้ว`
+            : `ตั้งหน่วยเริ่มต้นให้ ${result.appliedCount} ตัวเลือกแล้ว`,
+        description:
+          result.skippedCount > 0
+            ? `ข้าม ${result.skippedCount} ตัวที่ยังไม่ได้เพิ่มหน่วยนี้ไว้`
+            : undefined,
+      });
     });
   }
 
@@ -304,6 +393,7 @@ export function SkusDialog({ product, unitTypes, setUnitTypes, onCountChange }) 
           .map((entry) => entry.unitTypeId)
           .filter((id) => id !== sku.unitTypeId)
       ),
+      defaultUnitId: sku.defaultUnitTypeId ? String(sku.defaultUnitTypeId) : BASE_DEFAULT,
       // ยอดแก้ที่นี่ไม่ได้ ต้องไปปรับผ่านหน้าสินค้าเพื่อให้มีประวัติกำกับ
       qty: String(sku.qty),
     });
@@ -316,6 +406,8 @@ export function SkusDialog({ product, unitTypes, setUnitTypes, onCountChange }) 
 
     const current = draft;
     const isEdit = current.id !== null;
+    const defaultUnitId =
+      current.defaultUnitId === BASE_DEFAULT ? null : Number(current.defaultUnitId);
 
     startTransition(async () => {
       // อัปโหลดรูปก่อน ถ้าพลาดจะได้ไม่มีตัวเลือกที่รูปหาย
@@ -341,7 +433,8 @@ export function SkusDialog({ product, unitTypes, setUnitTypes, onCountChange }) 
             imageUrl,
             Number(current.unitTypeId),
             [...current.extraUnitIds],
-            current.code.trim() || null
+            current.code.trim() || null,
+            defaultUnitId
           )
         : await createSkuAction(
             product.id,
@@ -350,7 +443,8 @@ export function SkusDialog({ product, unitTypes, setUnitTypes, onCountChange }) 
             Number(current.unitTypeId),
             Number(current.qty) || 0,
             [...current.extraUnitIds],
-            current.code.trim() || null
+            current.code.trim() || null,
+            defaultUnitId
           );
 
       if (!result.ok) {
@@ -553,6 +647,66 @@ export function SkusDialog({ product, unitTypes, setUnitTypes, onCountChange }) 
             <p className="text-[0.7rem] text-muted-foreground">
               แก้ได้เฉพาะหน่วย — ชื่อ รหัส และรูป เป็นของเฉพาะตัว ต้องแก้ทีละอัน
             </p>
+
+            <Separator />
+
+            {/* ตั้งหน่วยเริ่มต้นแยกจากหน่วยหลัก เพราะเป็นคนละเรื่องกัน: หน่วยหลักคือหน่วยที่
+                เก็บยอด (×1 เสมอ) ส่วนอันนี้คือหน่วยที่หน้าสินค้าจะเลือกให้ตอนตัดสต็อก */}
+            <p className="text-xs font-medium">หน่วยเริ่มต้นตอนตัดสต็อก</p>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Combobox
+                items={allUnitOptions}
+                value={bulkSelectedDefault}
+                onValueChange={(option) =>
+                  setBulkDefaultUnitId(option ? String(option.id) : "")
+                }
+                itemToStringLabel={unitOptionLabel}
+                filter={unitOptionFilter}
+                isItemEqualToValue={sameUnitOption}
+                limit={50}
+                autoHighlight
+                disabled={busy}
+              >
+                <ComboboxInputGroup>
+                  <ComboboxInput placeholder={`ค้นหาใน ${allUnitOptions.length} หน่วย`} />
+                  <ComboboxClear />
+                  <ComboboxTrigger />
+                </ComboboxInputGroup>
+                <ComboboxContent>
+                  <ComboboxEmpty>ไม่พบหน่วยที่ค้นหา</ComboboxEmpty>
+                  <ComboboxList>
+                    {(option) => (
+                      <ComboboxItem key={option.id} value={option}>
+                        {option.label}
+                      </ComboboxItem>
+                    )}
+                  </ComboboxList>
+                </ComboboxContent>
+              </Combobox>
+
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => applyBulkDefaultUnit(Number(bulkDefaultUnitId))}
+                  disabled={busy || !bulkDefaultUnitId}
+                >
+                  ตั้งให้ {selectedIds.size} ตัว
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => applyBulkDefaultUnit(null)}
+                  disabled={busy}
+                >
+                  กลับไปใช้หน่วยหลัก
+                </Button>
+              </div>
+            </div>
+
+            <p className="text-[0.7rem] text-muted-foreground">
+              ตัวที่ยังไม่มีหน่วยนี้ในรายการหน่วยของมันจะถูกข้าม — เพิ่มหน่วยให้ก่อนแล้วกดซ้ำได้
+            </p>
           </div>
         )}
 
@@ -655,16 +809,22 @@ export function SkusDialog({ product, unitTypes, setUnitTypes, onCountChange }) 
                 <Combobox
                   items={baseUnitOptions}
                   value={selectedBaseOption}
-                  onValueChange={(option) =>
+                  onValueChange={(option) => {
+                    // เปลี่ยนหน่วยหลักแล้วตัวเดิมอาจไปซ้ำอยู่ในหน่วยเสริม ต้องถอดออก
+                    const extraUnitIds = new Set(
+                      [...draft.extraUnitIds].filter((id) => id !== option?.id)
+                    );
                     setDraft({
                       ...draft,
                       unitTypeId: option ? String(option.id) : "",
-                      // เปลี่ยนหน่วยหลักแล้วตัวเดิมอาจไปซ้ำอยู่ในหน่วยเสริม ต้องถอดออก
-                      extraUnitIds: new Set(
-                        [...draft.extraUnitIds].filter((id) => id !== option?.id)
+                      extraUnitIds,
+                      defaultUnitId: keepDefaultUnit(
+                        draft.defaultUnitId,
+                        option?.id ?? "",
+                        extraUnitIds
                       ),
-                    })
-                  }
+                    });
+                  }}
                   itemToStringLabel={unitOptionLabel}
                   filter={unitOptionFilter}
                   isItemEqualToValue={sameUnitOption}
@@ -757,12 +917,18 @@ export function SkusDialog({ product, unitTypes, setUnitTypes, onCountChange }) 
                     multiple
                     items={extraOptions}
                     value={selectedExtraOptions}
-                    onValueChange={(options) =>
+                    onValueChange={(options) => {
+                      const extraUnitIds = new Set(options.map((option) => option.id));
                       setDraft({
                         ...draft,
-                        extraUnitIds: new Set(options.map((option) => option.id)),
-                      })
-                    }
+                        extraUnitIds,
+                        defaultUnitId: keepDefaultUnit(
+                          draft.defaultUnitId,
+                          draft.unitTypeId,
+                          extraUnitIds
+                        ),
+                      });
+                    }}
                     itemToStringLabel={unitOptionLabel}
                     filter={unitOptionFilter}
                     isItemEqualToValue={sameUnitOption}
@@ -803,6 +969,34 @@ export function SkusDialog({ product, unitTypes, setUnitTypes, onCountChange }) 
                       </ComboboxList>
                     </ComboboxContent>
                   </Combobox>
+                </div>
+              )}
+
+              {/* หน่วยที่หน้าสินค้าจะเลือกให้ทุกคนตอนติ๊กตัวเลือกนี้ — มีหน่วยเดียวก็ไม่ต้องถาม */}
+              {draftUnits.length > 1 && (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="sku-default-unit">หน่วยเริ่มต้นตอนตัดสต็อก</Label>
+                  <Select
+                    items={draftUnitItems}
+                    value={draft.defaultUnitId}
+                    onValueChange={(value) => setDraft({ ...draft, defaultUnitId: value })}
+                    disabled={busy}
+                  >
+                    <SelectTrigger id="sku-default-unit">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={BASE_DEFAULT}>ใช้หน่วยหลัก</SelectItem>
+                      {draftUnits.map((unit) => (
+                        <SelectItem key={unit.id} value={String(unit.id)}>
+                          {unit.name} (×{unit.qty})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[0.7rem] text-muted-foreground">
+                    คนที่เปิดหน้าสินค้าจะได้หน่วยนี้ให้อัตโนมัติ เปลี่ยนเองตอนนั้นได้
+                  </p>
                 </div>
               )}
 

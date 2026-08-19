@@ -59,8 +59,12 @@ model Sku {
   code String?                 // รหัส SKU ของผู้ขาย (ถ้ามี)
   imageUrl String?
   qty Int @default(0)          // ยอดคงเหลือ เก็บเป็นหน่วยย่อยที่สุด เหมือน Product.qty
-  baseUnit UnitType @relation(fields: [unitTypeId], references: [id])
+  baseUnit UnitType @relation("SkuBaseUnit", fields: [unitTypeId], references: [id])
   unitTypeId Int               // หน่วยหลักของตัวเลือกนี้ ต้องเป็น ×1
+  // หน่วยที่จะถูกเลือกให้อัตโนมัติตอนใครก็ตามเปิดหน้าสินค้ามาตัดสต็อก — ตั้งจากหน้าจัดการ
+  // null = ใช้หน่วยหลัก (พฤติกรรมเดิม) ต้องเป็นหน่วยที่ตัวเลือกนี้รองรับเท่านั้น
+  defaultUnitTypeId Int?
+  defaultUnit UnitType? @relation("SkuDefaultUnit", fields: [defaultUnitTypeId], references: [id])
   SkuUnitType SkuUnitType[]
   ProductHistory ProductHistory[]
   createdAt DateTime @default(now())
@@ -87,7 +91,8 @@ model UnitType{
   qty Int @default(1)          // 1 หน่วยนี้ = กี่หน่วยย่อย เช่น ลัง = 12
   products Product[]
   productUnitType ProductUnitType[]
-  skus Sku[]
+  skus Sku[] @relation("SkuBaseUnit")
+  defaultSkus Sku[] @relation("SkuDefaultUnit")
   skuUnitType SkuUnitType[]
 
   @@map("QtyType")

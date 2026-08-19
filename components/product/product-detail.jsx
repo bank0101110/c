@@ -30,20 +30,23 @@ import { skuUnits } from "@/lib/stock";
 // ค่าของ "ไม่มีหมวดหมู่" ใน Select — ใช้ string ว่างไม่ได้ Base UI ถือว่าเป็นยังไม่ได้เลือก
 const NO_CATEGORY = "none";
 
-// หน่วยเริ่มต้นแบบ "ตามหน่วยหลักของแต่ละตัวเลือก" (พฤติกรรมเดิม) แยกจาก id หน่วยจริง
+// หน่วยเริ่มต้นแบบ "ตามที่ตั้งไว้ของแต่ละตัวเลือก" (ค่าจาก DB) แยกจาก id หน่วยจริง
 const AUTO_UNIT = "auto";
 
 /**
  * หน่วยที่ควรถูกเลือกไว้ให้ตอนติ๊กตัวเลือกนี้
  *
- * ตัวเลือกแต่ละตัวรองรับหน่วยไม่เหมือนกัน ตัวที่ไม่มีหน่วยเริ่มต้นที่ตั้งไว้ก็ถอยไปใช้
- * หน่วยหลักของตัวเอง ดีกว่าเลือกหน่วยที่ใช้กับมันไม่ได้แล้วโดน server ตีกลับทั้งชุด
+ * ลำดับคือ หน่วยที่ผู้ใช้สลับไว้ชั่วคราวบนหน้านี้ → หน่วยเริ่มต้นที่เจ้าของตั้งไว้จากหน้าจัดการ
+ * → หน่วยหลักของตัวเอง ตัวไหนใช้กับตัวเลือกนี้ไม่ได้ก็ข้ามไปตัวถัดไป ดีกว่าเลือกหน่วยที่
+ * ใช้กับมันไม่ได้แล้วโดน server ตีกลับทั้งชุด
  */
 function unitForSku(sku, preferred) {
   if (!sku) return "";
-  if (preferred !== AUTO_UNIT && skuUnits(sku).some((unit) => String(unit.id) === preferred)) {
-    return preferred;
-  }
+  const units = skuUnits(sku);
+  const usable = (id) => id != null && units.some((unit) => String(unit.id) === String(id));
+
+  if (preferred !== AUTO_UNIT && usable(preferred)) return preferred;
+  if (usable(sku.defaultUnitTypeId)) return String(sku.defaultUnitTypeId);
   return String(sku.unitTypeId);
 }
 
@@ -150,7 +153,7 @@ export function ProductDetail({ product: initialProduct, categories = [], curren
   // เหตุผลเดียวกับ categoryItems — Base UI ต้องได้ map value -> label ถึงจะโชว์ชื่อที่เลือก
   const defaultUnitItems = useMemo(
     () => ({
-      [AUTO_UNIT]: "หน่วยหลักของแต่ละตัว",
+      [AUTO_UNIT]: "ตามที่ตั้งไว้ของแต่ละตัว",
       ...Object.fromEntries(
         unitChoices.map((unit) => [String(unit.id), `${unit.name} (×${unit.qty})`])
       ),
@@ -408,12 +411,13 @@ export function ProductDetail({ product: initialProduct, categories = [], curren
               </div>
             )}
 
-            {/* หน่วยเริ่มต้น — คนที่ตัดสต็อกเป็นลัง/แพ็คทั้งวันจะได้ไม่ต้องเปลี่ยนหน่วยทีละใบ
+            {/* สลับหน่วยชั่วคราวเฉพาะรอบนี้ — ค่าตั้งต้นจริงมาจากหน่วยเริ่มต้นที่เจ้าของตั้งไว้
+                ในหน้าจัดการ ตรงนี้ไว้ให้คนที่ตัดสต็อกเป็นลัง/แพ็คทั้งวันไม่ต้องเปลี่ยนทีละใบ
                 (เผลอลืมเปลี่ยนแล้วยอดหายเป็นเท่าตัว) ขึ้นเฉพาะตอนมีหน่วยให้เลือกจริง ๆ */}
             {unitChoices.length > 1 && (
               <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed p-2.5">
                 <Label htmlFor="default-unit" className="text-xs font-medium">
-                  หน่วยเริ่มต้น
+                  สลับหน่วย
                 </Label>
                 <Select
                   items={defaultUnitItems}
@@ -425,7 +429,7 @@ export function ProductDetail({ product: initialProduct, categories = [], curren
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={AUTO_UNIT}>หน่วยหลักของแต่ละตัว</SelectItem>
+                    <SelectItem value={AUTO_UNIT}>ตามที่ตั้งไว้ของแต่ละตัว</SelectItem>
                     {unitChoices.map((unit) => (
                       <SelectItem key={unit.id} value={String(unit.id)}>
                         {unit.name} (×{unit.qty})

@@ -23,8 +23,16 @@ export async function getSkuGuard(id) {
     }
 }
 
-export async function createSku(productId, name, imageUrl, unitTypeId, qty = 0, extraUnitTypeIds = [], code = null) {
+/** หน่วยที่ตัวเลือกหนึ่งใช้ได้ = หน่วยหลัก + หน่วยเสริม — ใช้กันตั้งหน่วยเริ่มต้นที่ใช้ไม่ได้ */
+function supportedDefault(defaultUnitTypeId, unitTypeId, extraUnitTypeIds) {
+    if (!defaultUnitTypeId) return null
+    return [unitTypeId, ...extraUnitTypeIds].includes(defaultUnitTypeId) ? defaultUnitTypeId : null
+}
+
+export async function createSku(productId, name, imageUrl, unitTypeId, qty = 0, extraUnitTypeIds = [], code = null, defaultUnitTypeId = null) {
     try {
+        const extras = extraUnitTypeIds.filter((id) => id !== unitTypeId)
+
         return await prisma.sku.create({
             data: {
                 productId,
@@ -33,10 +41,9 @@ export async function createSku(productId, name, imageUrl, unitTypeId, qty = 0, 
                 imageUrl,
                 qty,
                 unitTypeId,
+                defaultUnitTypeId: supportedDefault(defaultUnitTypeId, unitTypeId, extras),
                 SkuUnitType: {
-                    create: extraUnitTypeIds
-                        .filter((id) => id !== unitTypeId)
-                        .map((id) => ({ unitTypeId: id })),
+                    create: extras.map((id) => ({ unitTypeId: id })),
                 },
             },
             include: skuInclude,
@@ -77,6 +84,16 @@ export async function setSkusUnits(skuIds, unitTypeId, extraUnitTypeIds = []) {
 
             await tx.sku.updateMany({ where: { id: { in: skuIds } }, data: { unitTypeId } })
 
+            // หน่วยเริ่มต้นที่ตั้งไว้อาจไม่อยู่ในชุดหน่วยใหม่แล้ว ปล่อยค้างไว้หน้าสินค้าจะเลือก
+            // หน่วยที่ตัวเลือกนั้นใช้ไม่ได้ให้ แล้วโดน server ตีกลับตอนบันทึก
+            await tx.sku.updateMany({
+                where: {
+                    id: { in: skuIds },
+                    defaultUnitTypeId: { notIn: [unitTypeId, ...wanted] },
+                },
+                data: { defaultUnitTypeId: null },
+            })
+
             return tx.sku.findMany({ where: { id: { in: skuIds } }, include: skuInclude })
         })
     } catch (error) {
@@ -85,7 +102,55 @@ export async function setSkusUnits(skuIds, unitTypeId, extraUnitTypeIds = []) {
     }
 }
 
-export async function saveSku(id, name, imageUrl, unitTypeId, extraUnitTypeIds = [], code = null) {
+/**
+ * ตั้งหน่วยเริ่มต้น (หน่วยที่หน้าสินค้าจะเลือกให้ตอนติ๊กตัวเลือก) ให้หลายตัวพร้อมกัน
+ *
+ * unitTypeId = null คือกลับไปใช้หน่วยหลักของแต่ละตัว ตั้งได้ทุกตัวอยู่แล้วเลยไม่ต้องเช็ค
+ * ส่วนหน่วยอื่นตั้งได้เฉพาะตัวที่รองรับหน่วยนั้น ตัวที่ไม่รองรับคืนเป็น skipped ให้ UI บอกผู้ใช้
+ */
+export async function setSkusDefaultUnit(skuIds, unitTypeId) {
+    try {
+        return await prisma.$transaction(async (tx) => {
+            const rows = await tx.sku.findMany({
+                where: { id: { in: skuIds } },
+                select: {
+                    id: true,
+                    unitTypeId: true,
+                    SkuUnitType: { select: { unitTypeId: true } },
+                },
+            })
+
+            const targets =
+                unitTypeId === null
+                    ? rows
+                    : rows.filter(
+                          (sku) =>
+                              sku.unitTypeId === unitTypeId ||
+                              sku.SkuUnitType.some((entry) => entry.unitTypeId === unitTypeId)
+                      )
+
+            if (targets.length > 0) {
+                await tx.sku.updateMany({
+                    where: { id: { in: targets.map((sku) => sku.id) } },
+                    data: { defaultUnitTypeId: unitTypeId },
+                })
+            }
+
+            const applied = new Set(targets.map((sku) => sku.id))
+
+            return {
+                skus: await tx.sku.findMany({ where: { id: { in: skuIds } }, include: skuInclude }),
+                appliedCount: applied.size,
+                skippedCount: rows.length - applied.size,
+            }
+        })
+    } catch (error) {
+        console.error(error)
+        return null
+    }
+}
+
+export async function saveSku(id, name, imageUrl, unitTypeId, extraUnitTypeIds = [], code = null, defaultUnitTypeId = null) {
     try {
         return await prisma.$transaction(async (tx) => {
             const wanted = new Set(extraUnitTypeIds.filter((unitId) => unitId !== unitTypeId))
@@ -111,7 +176,14 @@ export async function saveSku(id, name, imageUrl, unitTypeId, extraUnitTypeIds =
 
             return tx.sku.update({
                 where: { id },
-                data: { name, imageUrl, unitTypeId, code },
+                data: {
+                    name,
+                    imageUrl,
+                    unitTypeId,
+                    code,
+                    // ถอดหน่วยที่เคยตั้งเป็นหน่วยเริ่มต้นออกจากตัวเลือกนี้ = หน่วยเริ่มต้นตกไปด้วย
+                    defaultUnitTypeId: supportedDefault(defaultUnitTypeId, unitTypeId, [...wanted]),
+                },
                 include: skuInclude,
             })
         })
