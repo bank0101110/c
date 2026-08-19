@@ -16,9 +16,20 @@ export const productInclude = {
     _count: { select: { skus: true } },
 }
 
+/** ฟิลด์ของหมายเหตุที่ส่งกลับหลังบันทึก — ฝั่ง client เอาไปทับ state ได้เลย */
+export const productNoteSelect = {
+    id: true,
+    note: true,
+    noteImageUrl: true,
+    noteUpdatedAt: true,
+    noteUpdatedBy: { select: { id: true, name: true, email: true, image: true } },
+}
+
 /** ชุดเต็มสำหรับหน้าสินค้าเดี่ยว — มี SKU พร้อมหน่วยของแต่ละตัว */
 export const productDetailInclude = {
     ...productInclude,
+    // เฉพาะหน้าสินค้าเดี่ยว — หน้ารายการไม่ต้อง join ผู้แก้หมายเหตุมาทีละร้อยแถว
+    noteUpdatedBy: { select: { id: true, name: true, email: true, image: true } },
     skus: {
         orderBy: { id: "asc" },
         include: {
@@ -238,5 +249,32 @@ export async function deleteProduct(id) {
     } catch (error) {
         console.error(error)
         return false
+    }
+}
+
+/**
+ * หมายเหตุประจำสินค้า — ที่เก็บของ/จุดวาง/ย้ายโกดัง พร้อมรูปถ่าย
+ *
+ * ทับของเดิมทั้งก้อน (ไม่เก็บประวัติหมายเหตุ) เพราะสิ่งที่คนอ่านต้องการคือ "ตอนนี้ของอยู่ไหน"
+ * ไม่ใช่ว่าเคยอยู่ไหนมาบ้าง ส่วนใครแก้ล่าสุดเมื่อไหร่เก็บไว้ให้ตามตัวคนตอบได้
+ */
+export async function saveProductNote(id, note, imageUrl, userId) {
+    const hasContent = Boolean(note || imageUrl)
+
+    try {
+        return await prisma.product.update({
+            where: { id },
+            data: {
+                note,
+                noteImageUrl: imageUrl,
+                // ล้างหมายเหตุจนไม่เหลืออะไร ก็ไม่ต้องค้างว่าใครแก้ล่าสุด
+                noteUpdatedAt: hasContent ? new Date() : null,
+                noteUpdatedById: hasContent ? userId : null,
+            },
+            select: productNoteSelect,
+        })
+    } catch (error) {
+        console.error(error)
+        return null
     }
 }

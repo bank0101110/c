@@ -8,6 +8,7 @@ import {
     getProduct,
     getProductGuard,
     saveProduct,
+    saveProductNote,
 } from "@/app/server/product"
 import {
     addProductUnit,
@@ -559,6 +560,38 @@ export async function setSkusDefaultUnitAction(skuIds, unitTypeId) {
     if (!result) return { ok: false, error: "ตั้งหน่วยเริ่มต้นไม่สำเร็จ" }
 
     return { ok: true, ...result }
+}
+
+/** หมายเหตุยาวเกินนี้เริ่มอ่านไม่ไหวบนมือถือ และไม่ใช่ที่สำหรับเขียนรายละเอียดยาว ๆ */
+const NOTE_MAX_LENGTH = 500
+
+/**
+ * แก้หมายเหตุประจำสินค้า (ที่เก็บของ/ย้ายโกดัง) พร้อมรูปจุดวาง
+ *
+ * ไม่เช็คเจ้าของ — คนหน้าคลังที่ย้ายของจริงมักไม่ใช่คนสร้างสินค้า ถ้าบังคับให้เจ้าของแก้
+ * คนเดียว หมายเหตุจะเก่าค้างจนไม่มีใครเชื่อ แต่ยังบังคับล็อกอินเพื่อให้รู้ว่าใครแก้ล่าสุด
+ */
+export async function saveProductNoteAction(productId, note, imageUrl) {
+    const id = toId(productId)
+    const user = await requireUser()
+
+    if (!user) return UNAUTHORIZED
+    if (!id) return { ok: false, error: "ไม่พบสินค้า" }
+
+    const text = String(note ?? "").trim()
+    if (text.length > NOTE_MAX_LENGTH) {
+        return { ok: false, error: `หมายเหตุยาวเกิน ${NOTE_MAX_LENGTH} ตัวอักษร` }
+    }
+
+    const product = await saveProductNote(
+        id,
+        text || null,
+        String(imageUrl ?? "").trim() || null,
+        user.id
+    )
+    if (!product) return { ok: false, error: "บันทึกหมายเหตุไม่สำเร็จ" }
+
+    return { ok: true, product }
 }
 
 export async function deleteSkuAction(skuId) {

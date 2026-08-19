@@ -20,6 +20,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { SkuCard } from "@/components/product/sku-picker";
 import { HistoryDialog } from "@/components/product/history-dialog";
+import { NoteCard } from "@/components/product/note-card";
 import {
   adjustSkuStockBatchAction,
   setProductCategoryAction,
@@ -83,6 +84,11 @@ export function ProductDetail({ product: initialProduct, categories = [], curren
   function goBack() {
     if (window.history.length > 1) router.back();
     else router.push("/");
+  }
+
+  /** หมายเหตุถูกแก้จากกล่องของมันเอง — action คืนเฉพาะฟิลด์หมายเหตุกลับมาให้ทับ */
+  function handleNoteSaved(patch) {
+    setProduct((prev) => ({ ...prev, ...patch }));
   }
 
   // เหตุผลเดียวกับหน่วยใน SkuCard — ไม่ส่ง items ปุ่มจะโชว์ id ของหมวดแทนชื่อ
@@ -357,6 +363,10 @@ export function ProductDetail({ product: initialProduct, categories = [], curren
           )}
         </div>
       </div>
+
+      {/* ของอยู่ตรงไหน/ย้ายไปไหนแล้ว — วางไว้ก่อนแถบปรับสต็อก เพราะคนที่เข้ามาหยิบของ
+          ต้องเห็นก่อนที่จะไปกดตัดสต็อก */}
+      <NoteCard product={product} currentUser={currentUser} onSaved={handleNoteSaved} />
 
       {!currentUser ? (
         <div className="mt-8 flex flex-col items-start gap-3 rounded-xl border border-dashed p-6">

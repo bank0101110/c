@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { ArrowUpDown, Layers, Package } from "lucide-react";
+import { ArrowUpDown, Layers, MapPin, Package } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
@@ -12,6 +12,8 @@ function ProductCardBase({ product }) {
   const { parts, remainder } = breakdown(product.qty, units);
   // สินค้าที่มีตัวเลือกย่อยจะพาไปหน้าสินค้าแทนการเปิด dialog ป้ายเลยต้องบอกให้ตรง
   const skuCount = product._count?.skus ?? 0;
+  // มีหมายเหตุที่เก็บของ = ติดหมุดไว้ให้เห็นตั้งแต่หน้ารายการ จะได้รู้ว่าต้องเข้าไปอ่านก่อนไปหยิบ
+  const hasNote = Boolean(product.note || product.noteImageUrl);
 
   return (
     // group ให้ลูก ๆ ขยับตามตอน hover การ์ด — Tailwind ห่อ hover: ไว้ใน @media (hover: hover)
@@ -41,6 +43,16 @@ function ProductCardBase({ product }) {
           >
             <Layers className="size-3" />
             {skuCount}
+          </Badge>
+        )}
+
+        {hasNote && (
+          <Badge
+            variant="secondary"
+            className="absolute top-1.5 left-1.5 gap-1 px-1.5 text-[0.65rem]"
+            title="มีหมายเหตุที่เก็บของ"
+          >
+            <MapPin className="size-3" />
           </Badge>
         )}
 
