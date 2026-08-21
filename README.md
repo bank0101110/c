@@ -87,6 +87,9 @@ app/
   manage/page.js             หน้าจัดการ (ต้องล็อกอิน)
   manage/actions.js          Server Action ทั้งหมด ← ด่านตรวจสิทธิ์อยู่ที่นี่
   login/page.js              หน้าเข้าสู่ระบบ
+  offline/page.js            หน้าที่ service worker หยิบมาแสดงตอนเน็ตหลุด (static ล้วน)
+  manifest.js                web app manifest → /manifest.webmanifest
+  icon.svg / apple-icon.png / favicon.ico   ไอคอนแอป (Next ใส่ <link> ให้เอง)
   api/auth/[...all]/route.js endpoint ของ Better Auth
   server/                    ชั้นคุยกับ DB (เรียกจาก server เท่านั้น)
     product.js  unitType.js  productUnitType.js  productHistory.js
@@ -96,6 +99,7 @@ components/
   landing/                   หน้าแรก (navbar, hero, การ์ดสินค้า, ค้นหา)
   manage/                    หน้าจัดการ (ตารางสินค้า, กล่องเพิ่ม/แก้/ปรับสต็อก)
   auth/                      ปุ่มล็อกอิน, เมนูผู้ใช้, โลโก้ provider
+  pwa/                       ลงทะเบียน service worker, แถบชวนติดตั้งแอป
   ui/                        คอมโพเนนต์พื้นฐานจาก shadcn (ปกติไม่ต้องแก้เอง)
 
 lib/
@@ -105,6 +109,10 @@ lib/
   auth-client.js             Better Auth ฝั่ง client
   supabase-storage.js        อัปโหลดรูปสินค้าขึ้น Supabase Storage
   site-config.js             ชื่อเว็บ, เมนู, ข้อความ hero
+
+public/
+  sw.js                      service worker (เสิร์ฟที่ /sw.js — ต้องอยู่ราก scope ถึงจะคุมทั้งเว็บ)
+  icons/                     ไอคอน PWA ที่ manifest อ้างถึง + ไฟล์ svg ต้นฉบับไว้ทำใหม่
 
 prisma/
   schema.prisma              โครงสร้างตาราง
@@ -141,6 +149,43 @@ erDiagram
 
 `ProductHistory` เก็บ `unitName` กับ `unitAmount` ไว้เป็นข้อความตอนบันทึก **โดยตั้งใจ**
 ประวัติจะได้ไม่เพี้ยนถ้าหน่วยถูกลบหรือแก้ทีหลัง (FK เป็น `SetNull`)
+
+---
+
+## PWA — ติดตั้งลงเครื่องได้
+
+เว็บนี้เป็น Progressive Web App ติดตั้งลงหน้าจอโฮมของมือถือหรือลง Windows/macOS ได้
+เปิดจากไอคอนแล้วได้เต็มจอไม่มีแถบ URL และเน็ตหลุดจะเจอหน้า `/offline` แทนหน้า error ของเบราว์เซอร์
+
+| ชิ้นส่วน | ไฟล์ | ทำอะไร |
+|---|---|---|
+| Manifest | [`app/manifest.js`](app/manifest.js) | ชื่อแอป ไอคอน สีธีม โหมด standalone — Next ใส่ `<link rel="manifest">` ให้เอง |
+| ไอคอน | [`app/icon.svg`](app/icon.svg), [`app/apple-icon.png`](app/apple-icon.png), [`public/icons/`](public/icons) | โลโก้เดียวกับใน Navbar (lucide `package-search`) |
+| Service worker | [`public/sw.js`](public/sw.js) | หน้า offline + cache ไฟล์ static |
+| ลงทะเบียน sw | [`components/pwa/service-worker-registrar.jsx`](components/pwa/service-worker-registrar.jsx) | ลงเฉพาะตอน production |
+| แถบชวนติดตั้ง | [`components/pwa/install-prompt.jsx`](components/pwa/install-prompt.jsx) | Android/เดสก์ท็อปกดติดตั้งได้เลย, iOS บอกวิธีผ่านปุ่มแชร์ |
+
+**ข้อมูลสต็อกไม่ถูก cache เลยแม้แต่นิดเดียว** — service worker แตะเฉพาะไฟล์ static
+ส่วน HTML ทุกหน้าและ Server Action ทั้งหมดวิ่งถึงเซิร์ฟเวอร์เสมอ
+ยอดสต็อกเก่าค้างในเครื่องอันตรายกว่าการบอกตรง ๆ ว่าตอนนี้ออฟไลน์ และ HTML แต่ละหน้ายังผูกกับคนที่ล็อกอินอยู่ด้วย
+
+### ทดสอบ
+
+```bash
+npm run build && npm start     # sw ไม่ลงตอน npm run dev
+```
+
+เปิด DevTools → Application → Manifest / Service Workers แล้วลองสลับเป็น Offline ดู
+
+### ข้อจำกัดที่ต้องรู้
+
+- **ต้อง `localhost` หรือ HTTPS เท่านั้น** — service worker เป็น secure context เปิดผ่าน `http://192.168.x.x`
+  จากมือถือในวง LAN จะไม่ลงและไม่มีปุ่มติดตั้งให้ ทดสอบบนมือถือต้อง deploy ขึ้น HTTPS จริง
+  หรือรัน `next dev --experimental-https`
+- **แก้ `public/sw.js` แล้วต้องขึ้นเลข `VERSION` ในไฟล์** ไม่งั้นชื่อ cache เดิมยังอยู่ ของเก่าไม่ถูกล้าง
+- **เปลี่ยนโลโก้** ให้แก้ต้นฉบับ svg สองไฟล์ — `app/icon.svg` (แบบมุมโค้ง) กับ `public/icons/icon-maskable.svg`
+  แล้ว export เป็น png ตามขนาดที่ `app/manifest.js` อ้างถึงให้ครบ พร้อม `app/apple-icon.png` (180×180)
+  ตัว maskable ต้องพื้นเต็มใบและโลโก้กินไม่เกิน ~55% ของด้าน เพราะ Android ครอบทรงของตัวเองทับ
 
 ---
 

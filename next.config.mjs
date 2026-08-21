@@ -12,6 +12,20 @@ const nextConfig = {
       bodySizeLimit: "12mb",
     },
   },
+
+  async headers() {
+    return [
+      {
+        // ไฟล์ใน public/ ถูกเสิร์ฟพร้อม cache header ยาว ๆ ถ้าปล่อยไว้ เครื่องที่ติดตั้งแอปแล้ว
+        // จะยึด sw ตัวเก่าไว้จนกว่า cache จะหมดอายุ แก้ service worker แล้วไม่มีผล
+        source: "/sw.js",
+        headers: [
+          { key: "Content-Type", value: "application/javascript; charset=utf-8" },
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -2,6 +2,8 @@ import { IBM_Plex_Sans_Thai, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { siteConfig } from "@/lib/site-config";
 import { ToastProvider } from "@/components/ui/toast";
+import { InstallPrompt } from "@/components/pwa/install-prompt";
+import { ServiceWorkerRegistrar } from "@/components/pwa/service-worker-registrar";
 
 // IBM Plex Sans Thai มีทั้งไทยและละตินในตระกูลเดียว ตัวไทยเป็นแบบไม่มีหัว
 // อ่านง่ายที่ขนาดเล็ก และผสมกับคำอังกฤษ (ชื่อสินค้า/ปุ่ม) แล้วน้ำหนักตัวอักษรไม่แตกกัน
@@ -22,6 +24,14 @@ export const metadata = {
   // template ทำให้หน้าลูกส่งแค่ชื่อของตัวเองมา แล้วได้ "ชื่อสินค้า — Stockly" อัตโนมัติ
   title: { default: siteConfig.name, template: `%s — ${siteConfig.name}` },
   description: siteConfig.description,
+  applicationName: siteConfig.name,
+  // iOS ไม่อ่าน manifest ตอน "เพิ่มไปยังหน้าจอโฮม" ต้องบอกผ่าน meta พวกนี้แทน
+  // ไม่ใส่ = เปิดจากไอคอนแล้วยังโผล่แถบ URL ของ Safari อยู่ดี
+  appleWebApp: {
+    capable: true,
+    title: siteConfig.name,
+    statusBarStyle: "default",
+  },
   // ค่าตั้งต้นของพรีวิวตอนแชร์ หน้าไหนมีของตัวเอง (เช่นหน้าสินค้า) จะเขียนทับเฉพาะที่ตั้ง
   openGraph: {
     type: "website",
@@ -37,6 +47,13 @@ export const metadata = {
   },
 };
 
+// themeColor = สีแถบสถานะ/แถบชื่อแอปตอนเปิดแบบติดตั้งแล้ว ต้องตรงกับ --background ของธีม
+// แอปนี้ยังเป็นโหมดสว่างอย่างเดียว เลยตรึง colorScheme ไว้ ไม่ให้ระบบไปกลับสีช่องกรอกเอง
+export const viewport = {
+  themeColor: "#ffffff",
+  colorScheme: "light",
+};
+
 export default function RootLayout({ children }) {
   return (
     <html
@@ -45,6 +62,8 @@ export default function RootLayout({ children }) {
     >
       <body className="min-h-full flex flex-col">
         <ToastProvider>{children}</ToastProvider>
+        <ServiceWorkerRegistrar />
+        <InstallPrompt />
       </body>
     </html>
   );
