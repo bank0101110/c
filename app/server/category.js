@@ -1,22 +1,34 @@
+import { unstable_cache } from "next/cache"
+
 import { prisma } from "@/prisma/prisma.js"
+
+/** tag สำหรับล้างแคชหมวดหมู่ — ทุก action ที่แตะหมวด (รวมย้ายสินค้าเข้าหมวด) ต้องล้างด้วย */
+export const CATEGORIES_TAG = "categories"
 
 /**
  * หมวดทั้งหมด รวมหมวดว่างที่ยังไม่มีสินค้า
  *
  * หน้าจัดการกับช่องเลือกหมวดในหน้าสินค้าต้องเห็นครบ ไม่งั้นหมวดที่เพิ่งสร้าง (ยังไม่มีสินค้า)
  * จะหายไปจนแก้ชื่อ/ลบ/ย้ายสินค้าเข้าไม่ได้เลย
+ *
+ * แคชข้ามรีเควสต์เหมือนหน่วยนับ — หมวดมีไม่กี่สิบแถวและเปลี่ยนนาน ๆ ที
+ * ล้างด้วย CATEGORIES_TAG ทุกครั้งที่สร้าง/แก้/ลบหมวด หรือย้ายสินค้าเข้าหมวด (จำนวนใน _count เปลี่ยน)
  */
-export async function getCategories() {
-    try {
-        return await prisma.category.findMany({
-            orderBy: { name: "asc" },
-            include: { _count: { select: { products: true } } },
-        })
-    } catch (error) {
-        console.error(error)
-        return []
-    }
-}
+export const getCategories = unstable_cache(
+    async () => {
+        try {
+            return await prisma.category.findMany({
+                orderBy: { name: "asc" },
+                include: { _count: { select: { products: true } } },
+            })
+        } catch (error) {
+            console.error(error)
+            return []
+        }
+    },
+    ["categories"],
+    { tags: [CATEGORIES_TAG], revalidate: 3600 }
+)
 
 /**
  * เฉพาะหมวดที่มีสินค้าอยู่จริง — ใช้กับแถบกรองหน้าแรก
@@ -26,18 +38,22 @@ export async function getCategories() {
  *
  * ไม่เอา _count มาด้วยเพราะแถบกรองไม่ได้โชว์จำนวน (ต่างจากหน้าจัดการที่โชว์)
  */
-export async function getUsedCategories() {
-    try {
-        return await prisma.category.findMany({
-            where: { products: { some: {} } },
-            orderBy: { name: "asc" },
-            select: { id: true, name: true },
-        })
-    } catch (error) {
-        console.error(error)
-        return []
-    }
-}
+export const getUsedCategories = unstable_cache(
+    async () => {
+        try {
+            return await prisma.category.findMany({
+                where: { products: { some: {} } },
+                orderBy: { name: "asc" },
+                select: { id: true, name: true },
+            })
+        } catch (error) {
+            console.error(error)
+            return []
+        }
+    },
+    ["used-categories"],
+    { tags: [CATEGORIES_TAG], revalidate: 3600 }
+)
 
 /** ชื่อหมวดห้ามซ้ำ (ไม่สนตัวพิมพ์ใหญ่เล็ก) — ใช้กันสร้างซ้ำก่อนยิง create */
 export async function findCategory(name) {

@@ -13,7 +13,7 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { formatBreakdown, skuUnits } from "@/lib/stock";
+import { skuUnits } from "@/lib/stock";
 import { thumbnailUrl } from "@/lib/images";
 
 /**
@@ -43,7 +43,9 @@ export const SkuCard = memo(function SkuCard({
   );
   const selectedUnit = units.find((unit) => String(unit.id) === draft?.unitTypeId);
   const factor = selectedUnit?.qty ?? 1;
-  const smallest = units.at(-1);
+  // ยอดคงเหลือเก็บเป็นหน่วยหลักของตัวเลือกนี้ จึงแสดงด้วยหน่วยหลักตรง ๆ
+  // ไม่แปลงขึ้นหน่วยใหญ่ให้เอง — ตัวไหนหน่วยหลักเป็นชิ้นก็ต้องขึ้นว่าชิ้น ไม่ใช่ลัง
+  const baseUnit = sku.baseUnit ?? units.at(-1);
 
   const amount = draft?.amount ?? "";
   const parsed = Number(amount);
@@ -93,11 +95,7 @@ export const SkuCard = memo(function SkuCard({
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="line-clamp-2 text-xs leading-snug font-medium">{sku.name}</span>
           <span className="text-[0.7rem] text-muted-foreground">
-            {sku.qty > 0
-              ? units.length > 1
-                ? formatBreakdown(sku.qty, units)
-                : `${sku.qty} ${smallest?.name ?? ""}`
-              : "หมด"}
+            {sku.qty > 0 ? `${sku.qty} ${baseUnit?.name ?? ""}` : "หมด"}
           </span>
         </div>
       </button>
@@ -145,7 +143,7 @@ export const SkuCard = memo(function SkuCard({
 
       {selected && !exceeds && hasAmount && factor > 1 && (
         <Badge variant="secondary" className="w-fit text-[0.7rem]">
-          = {parsed * factor} {smallest?.name ?? "หน่วย"}
+          = {parsed * factor} {baseUnit?.name ?? "หน่วย"}
         </Badge>
       )}
     </div>

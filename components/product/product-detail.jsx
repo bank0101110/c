@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, LogIn, Package, Search, X } from "lucide-react";
+import { ArrowLeft, LogIn, Package, Search, ShoppingBasket, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,8 @@ import {
   setProductCategoryAction,
 } from "@/app/manage/actions";
 import { allowedStockTypes, canManageProduct } from "@/lib/permissions";
-import { skuUnits } from "@/lib/stock";
+import { skuUnits, stockUnitName } from "@/lib/stock";
+import { useCart } from "@/lib/use-cart";
 
 // ค่าของ "ไม่มีหมวดหมู่" ใน Select — ใช้ string ว่างไม่ได้ Base UI ถือว่าเป็นยังไม่ได้เลือก
 const NO_CATEGORY = "none";
@@ -67,6 +68,7 @@ export function ProductDetail({ product: initialProduct, categories = [], curren
   // หน่วยที่จะถูกเลือกให้อัตโนมัติเวลาติ๊กตัวเลือกใหม่ — AUTO = ใช้หน่วยหลักของแต่ละตัว
   const [defaultUnit, setDefaultUnit] = useState(AUTO_UNIT);
   const router = useRouter();
+  const { addMany } = useCart();
   const [isPending, startTransition] = useTransition();
   const [savingCategory, startCategory] = useTransition();
   const { toast } = useToast();
@@ -130,6 +132,8 @@ export function ProductDetail({ product: initialProduct, categories = [], curren
   // ห่อ useMemo ไว้ ไม่งั้น ?? [] สร้าง array ใหม่ทุก render แล้ว useMemo ที่กรองด้านล่างพังหมด
   // สินค้าทุกตัวมีอย่างน้อยหนึ่งตัวเลือกเสมอ (บังคับตั้งแต่ตอนสร้าง) เลยไม่ต้องมีทางสำรอง
   const skus = useMemo(() => product.skus ?? [], [product.skus]);
+
+  const totalUnitName = stockUnitName(product);
 
   const availableTypes = useMemo(() => {
     const allowed = allowedStockTypes(product, currentUser);
@@ -242,6 +246,40 @@ export function ProductDetail({ product: initialProduct, categories = [], curren
 
   const ready = entries.length > 0 && entries.length === selectedCount;
 
+  /**
+   * ย้ายตัวที่ติ๊กไว้ลงตะกร้าแทนการบันทึกทันที — ไว้เดินเก็บของข้ามสินค้าแล้วค่อยกดทีเดียว
+   *
+   * เก็บชื่อ/รูป/หน่วยที่ใช้ได้ลงตะกร้าไปด้วย กล่องตะกร้าจะได้วาดได้เลยโดยไม่ต้องถามเซิร์ฟเวอร์
+   */
+  function handleAddToCart() {
+    if (entries.length === 0) return;
+
+    const added = addMany(
+      entries.map((entry) => {
+        const sku = skus.find((item) => item.id === entry.skuId);
+        const units = skuUnits(sku);
+        const unit = units.find((item) => item.id === entry.unitTypeId);
+
+        return {
+          skuId: sku.id,
+          productId: product.id,
+          productName: product.name,
+          skuName: sku.name,
+          imageUrl: sku.imageUrl,
+          unitTypeId: entry.unitTypeId,
+          unitName: unit?.name ?? "",
+          unitQty: unit?.qty ?? 1,
+          units,
+          amount: entry.amount,
+          skuQty: sku.qty,
+        };
+      })
+    );
+
+    clearAll();
+    toast({ variant: "success", title: `ใส่ตะกร้า ${added} รายการแล้ว` });
+  }
+
   function handleSave() {
     if (!ready || !currentUser) return;
 
@@ -344,9 +382,7 @@ export function ProductDetail({ product: initialProduct, categories = [], curren
             <span className="text-sm text-muted-foreground">คงเหลือรวม</span>
             <span className="text-2xl font-semibold tabular-nums">{product.qty}</span>
             {/* ยอดรวมเก็บเป็นหน่วยย่อยที่สุด ซึ่งคือหน่วยหลักของตัวเลือก (ทุกตัวเป็น ×1) */}
-            <span className="text-sm text-muted-foreground">
-              {skus[0]?.baseUnit?.name ?? "หน่วย"}
-            </span>
+            <span className="text-sm text-muted-foreground">{totalUnitName}</span>
           </div>
 
           {product.owner && (
@@ -549,6 +585,17 @@ export function ProductDetail({ product: initialProduct, categories = [], curren
                       disabled={isPending}
                     />
                   </div>
+                  {/* ใส่ตะกร้าไว้ก่อนสำหรับคนที่ต้องเดินเก็บของอีกหลายสินค้า
+                      ส่วนใครจะจบที่สินค้านี้เลยก็กดบันทึกทันทีได้เหมือนเดิม */}
+                  <Button
+                    variant="outline"
+                    onClick={handleAddToCart}
+                    disabled={entries.length === 0 || isPending}
+                    className="shrink-0"
+                  >
+                    <ShoppingBasket />
+                    ใส่ตะกร้า
+                  </Button>
                   <Button onClick={handleSave} disabled={!ready || isPending} className="shrink-0">
                     บันทึกทั้งหมด
                   </Button>

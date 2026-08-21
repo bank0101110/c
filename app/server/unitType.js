@@ -1,16 +1,31 @@
+import { unstable_cache } from "next/cache"
+
 import { prisma } from "@/prisma/prisma.js"
 
-export async function getUnitTypes() {
-    try {
-        const unitTypes = await prisma.unitType.findMany({
-            orderBy: [{ qty: "desc" }, { name: "asc" }],
-        })
-        return unitTypes
-    } catch (error) {
-        console.error(error)
-        return []
-    }
-}
+/** tag สำหรับล้างแคชหน่วยนับ — action ที่สร้าง/ลบหน่วยต้องเรียก revalidateTag ด้วยตัวนี้ */
+export const UNIT_TYPES_TAG = "unit-types"
+
+/**
+ * หน่วยนับทั้งระบบ — แคชไว้ข้ามรีเควสต์
+ *
+ * ตารางนี้มีไม่กี่สิบแถวและนาน ๆ ทีถึงจะมีหน่วยใหม่ แต่ถูกอ่านทุกครั้งที่เปิดหน้าสินค้า
+ * และหน้าจัดการ ซึ่งแต่ละครั้งคือไป-กลับ DB ข้ามภูมิภาคเกือบร้อยมิลลิวินาที
+ * เพิ่ม/ลบหน่วยเมื่อไหร่ก็ล้างด้วย tag ส่วน revalidate เป็นตาข่ายกันแคชค้างถ้าพลาดไป
+ */
+export const getUnitTypes = unstable_cache(
+    async () => {
+        try {
+            return await prisma.unitType.findMany({
+                orderBy: [{ qty: "desc" }, { name: "asc" }],
+            })
+        } catch (error) {
+            console.error(error)
+            return []
+        }
+    },
+    ["unit-types"],
+    { tags: [UNIT_TYPES_TAG], revalidate: 3600 }
+)
 
 export async function getUnitType(id) {
     try {

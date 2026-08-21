@@ -3,13 +3,13 @@ import { ArrowUpDown, Layers, MapPin, Package } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
-import { breakdown, productUnits } from "@/lib/stock";
+import { stockUnitName } from "@/lib/stock";
 import { thumbnailUrl } from "@/lib/images";
 
 function ProductCardBase({ product }) {
-  const units = productUnits(product);
   const inStock = product.qty > 0;
-  const { parts, remainder } = breakdown(product.qty, units);
+  // เดิมแตกยอดเป็น "12 ลัง + 3" ซึ่งขึ้นลังทั้งที่หน่วยหลักของตัวนั้นเป็นชิ้น
+  const unitName = stockUnitName(product);
   // สินค้าที่มีตัวเลือกย่อยจะพาไปหน้าสินค้าแทนการเปิด dialog ป้ายเลยต้องบอกให้ตรง
   const skuCount = product._count?.skus ?? 0;
   // มีหมายเหตุที่เก็บของ = ติดหมุดไว้ให้เห็นตั้งแต่หน้ารายการ จะได้รู้ว่าต้องเข้าไปอ่านก่อนไปหยิบ
@@ -80,14 +80,9 @@ function ProductCardBase({ product }) {
         </CardTitle>
         <div className="flex flex-wrap gap-1">
           {inStock ? (
-            <>
-              {parts.map((part) => (
-                <Badge key={part.id} variant="secondary">
-                  {part.count} {part.name}
-                </Badge>
-              ))}
-              {remainder > 0 && <Badge variant="secondary">+{remainder}</Badge>}
-            </>
+            <Badge variant="secondary">
+              {product.qty} {unitName}
+            </Badge>
           ) : (
             <Badge variant="destructive">หมด</Badge>
           )}

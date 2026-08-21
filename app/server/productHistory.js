@@ -258,3 +258,132 @@ export async function adjustSkuStockBatch({ userId, productId, entries, note }) 
         return { ok: false, error: "ปรับสต็อกไม่สำเร็จ" }
     }
 }
+
+/**
+ * ปรับสต็อกจาก "ตะกร้าเบิกของ" — หลายตัวเลือกข้ามหลายสินค้าในทรานแซกชันเดียว
+ *
+ * ต่างจาก adjustSkuStockBatch() ตรงที่ไม่ผูกกับสินค้าตัวเดียว เพราะคนหยิบของยืนอยู่จุดเดียว
+ * แล้วหยิบของหลายสินค้าพร้อมกัน จะให้กดบันทึกทีละสินค้าก็เสียเวลาเปล่า
+ *
+ * ยังยึดกฎเดิมทุกข้อ: ตรวจให้ครบก่อนเขียน ผิดแถวเดียวตกทั้งชุด และจำนวน query คงที่
+ * ไม่โตตามจำนวนรายการในตะกร้า (5 query ไม่ว่าจะ 3 รายการหรือ 50 รายการ)
+ */
+export async function adjustCartStock({ userId, entries, note }) {
+    try {
+        return await prisma.$transaction(async (tx) => {
+            const skuIds = [...new Set(entries.map((entry) => entry.skuId))]
+            const unitIds = [...new Set(entries.map((entry) => entry.unitTypeId))]
+
+            const [skus, unitTypes] = await Promise.all([
+                tx.sku.findMany({
+                    where: { id: { in: skuIds } },
+                    select: {
+                        id: true,
+                        name: true,
+                        qty: true,
+                        productId: true,
+                        unitTypeId: true,
+                        SkuUnitType: { select: { unitTypeId: true } },
+                    },
+                }),
+                tx.unitType.findMany({
+                    where: { id: { in: unitIds } },
+                    select: { id: true, name: true, qty: true },
+                }),
+            ])
+
+            const byId = new Map(skus.map((sku) => [sku.id, sku]))
+            const unitById = new Map(unitTypes.map((unitType) => [unitType.id, unitType]))
+
+            const nextQty = new Map()
+            const historyRows = []
+
+            for (const entry of entries) {
+                const sku = byId.get(entry.skuId)
+                if (!sku) throw new BatchError("มีรายการในตะกร้าที่ถูกลบไปแล้ว")
+
+                const allowed =
+                    entry.unitTypeId === sku.unitTypeId ||
+                    sku.SkuUnitType.some((row) => row.unitTypeId === entry.unitTypeId)
+                if (!allowed) throw new BatchError(`หน่วยที่เลือกใช้กับ "${sku.name}" ไม่ได้`)
+
+                const unitType = unitById.get(entry.unitTypeId)
+                if (!unitType) throw new BatchError(`ไม่พบหน่วยที่เลือกของ "${sku.name}"`)
+
+                const factor = unitType.qty > 0 ? unitType.qty : 1
+                const oldQty = nextQty.get(sku.id) ?? sku.qty
+                const changeQty =
+                    entry.type === "IN"
+                        ? toBase(entry.amount, factor)
+                        : entry.type === "OUT"
+                          ? -toBase(entry.amount, factor)
+                          : toBase(entry.amount, factor) - oldQty
+
+                const newQty = oldQty + changeQty
+                if (newQty < 0) throw new BatchError(`"${sku.name}" ยอดคงเหลือติดลบไม่ได้`)
+
+                nextQty.set(sku.id, newQty)
+                historyRows.push({
+                    userId,
+                    productId: sku.productId,
+                    skuId: sku.id,
+                    productUnitTypeId: null,
+                    unitName: unitType.name,
+                    unitAmount: entry.amount,
+                    changeQty,
+                    oldQty,
+                    newQty,
+                    type: entry.type,
+                    note,
+                })
+            }
+
+            const updates = [...nextQty].filter(([skuId, qty]) => qty !== byId.get(skuId).qty)
+            if (updates.length > 0) {
+                await tx.$executeRaw`
+                    UPDATE "Sku" AS s
+                    SET qty = v.qty, "updatedAt" = NOW()
+                    FROM (VALUES ${Prisma.join(
+                        updates.map(([skuId, qty]) => Prisma.sql`(${skuId}::int, ${qty}::int)`)
+                    )}) AS v(id, qty)
+                    WHERE s.id = v.id
+                `
+            }
+
+            // ยอดรวมของสินค้าแม่ทุกตัวที่ถูกแตะ — รวบเป็น 2 query ไม่ใช่ 2 query ต่อสินค้า
+            const productIds = [...new Set(skus.map((sku) => sku.productId))]
+            const totals = await tx.sku.groupBy({
+                by: ["productId"],
+                where: { productId: { in: productIds } },
+                _sum: { qty: true },
+            })
+
+            if (totals.length > 0) {
+                await tx.$executeRaw`
+                    UPDATE "Product" AS p
+                    SET qty = v.qty, "updateAt" = NOW()
+                    FROM (VALUES ${Prisma.join(
+                        totals.map(
+                            (row) =>
+                                Prisma.sql`(${row.productId}::int, ${row._sum.qty ?? 0}::int)`
+                        )
+                    )}) AS v(id, qty)
+                    WHERE p.id = v.id
+                `
+            }
+
+            return {
+                ok: true,
+                skuQty: Object.fromEntries(nextQty),
+                productQty: Object.fromEntries(
+                    totals.map((row) => [row.productId, row._sum.qty ?? 0])
+                ),
+                historyRows,
+            }
+        })
+    } catch (error) {
+        if (error instanceof BatchError) return { ok: false, error: error.message }
+        console.error(error)
+        return { ok: false, error: "บันทึกตะกร้าไม่สำเร็จ" }
+    }
+}

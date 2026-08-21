@@ -4,6 +4,7 @@ import { siteConfig } from "@/lib/site-config";
 import { ToastProvider } from "@/components/ui/toast";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { ServiceWorkerRegistrar } from "@/components/pwa/service-worker-registrar";
+import { CartBar } from "@/components/cart/cart-bar";
 
 // IBM Plex Sans Thai มีทั้งไทยและละตินในตระกูลเดียว ตัวไทยเป็นแบบไม่มีหัว
 // อ่านง่ายที่ขนาดเล็ก และผสมกับคำอังกฤษ (ชื่อสินค้า/ปุ่ม) แล้วน้ำหนักตัวอักษรไม่แตกกัน
@@ -61,7 +62,12 @@ export default function RootLayout({ children }) {
       className={`${sans.variable} ${mono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <ToastProvider>{children}</ToastProvider>
+        <ToastProvider>
+          {children}
+          {/* ตะกร้าเบิกของตามไปทุกหน้า เดินหยิบของข้ามสินค้าแล้วกดบันทึกทีเดียวจบ
+              (ซ่อนตัวเองอยู่แล้วถ้าตะกร้าว่าง) */}
+          <CartBar />
+        </ToastProvider>
         <ServiceWorkerRegistrar />
         <InstallPrompt />
       </body>

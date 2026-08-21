@@ -1,12 +1,13 @@
 "use server"
 
 import { after } from "next/server"
+import { revalidateTag } from "next/cache"
 
 import {
     createProduct,
     deleteProduct,
-    getProduct,
     getProductGuard,
+    getSkusByProduct,
     saveProduct,
     saveProductNote,
 } from "@/app/server/product"
@@ -15,8 +16,15 @@ import {
     getProductUnitOwnership,
     removeProductUnit,
 } from "@/app/server/productUnitType"
-import { createUnitType, deleteUnitType, findUnitType, getUnitType } from "@/app/server/unitType"
 import {
+    UNIT_TYPES_TAG,
+    createUnitType,
+    deleteUnitType,
+    findUnitType,
+    getUnitType,
+} from "@/app/server/unitType"
+import {
+    adjustCartStock,
     adjustStock,
     adjustSkuStockBatch,
     getProductHistory,
@@ -27,10 +35,12 @@ import {
     deleteSku,
     getSkuGuard,
     saveSku,
+    searchSkus,
     setSkusDefaultUnit,
     setSkusUnits,
 } from "@/app/server/sku"
 import {
+    CATEGORIES_TAG,
     createCategory,
     deleteCategory,
     findCategory,
@@ -304,6 +314,9 @@ export async function createUnitTypeAction(name, qty) {
     const unitType = await createUnitType(trimmed, factor)
     if (!unitType) return { ok: false, error: "สร้างหน่วยไม่สำเร็จ" }
 
+    // getUnitTypes() ถูกแคชไว้ ต้องบอกให้ล้างด้วย ไม่งั้นหน่วยใหม่จะยังไม่โผล่ในหน้าอื่น
+    revalidateTag(UNIT_TYPES_TAG, "max")
+
     return { ok: true, unitType }
 }
 
@@ -312,7 +325,10 @@ export async function deleteUnitTypeAction(id) {
     if (!(await requireUser())) return UNAUTHORIZED
     if (!unitTypeId) return { ok: false, error: "ไม่พบหน่วย" }
 
-    return deleteUnitType(unitTypeId)
+    const result = await deleteUnitType(unitTypeId)
+    if (result.ok) revalidateTag(UNIT_TYPES_TAG, "max")
+
+    return result
 }
 
 /**
@@ -608,6 +624,83 @@ export async function deleteSkuAction(skuId) {
     return { ok: true }
 }
 
+/**
+ * ตรวจแถวในตะกร้าให้ครบก่อนส่งเข้า DB — คืน { entries } ถ้าผ่าน หรือ { error } ถ้าไม่ผ่าน
+ *
+ * ทั้งตะกร้าใช้ชนิดรายการเดียวกัน (รับเข้า หรือ ตัดออก) เพราะรอบหนึ่งคนทำงานทำอย่างเดียว
+ * ส่วน "ตั้งยอดใหม่" ไม่เปิดให้ทำจากตะกร้า — เป็นงานแก้ยอดของเจ้าของ ควรทำทีละตัวโดยตั้งใจ
+ */
+function cleanCartEntries(items, type) {
+    if (!Array.isArray(items) || items.length === 0) {
+        return { error: "ตะกร้าว่าง" }
+    }
+    if (!["IN", "OUT"].includes(type)) {
+        return { error: "ชนิดรายการไม่ถูกต้อง" }
+    }
+
+    const entries = []
+    for (const item of items) {
+        const skuId = toId(item?.skuId)
+        const unitTypeId = toId(item?.unitTypeId)
+        const amount = toCount(item?.amount)
+
+        if (!skuId || !unitTypeId) return { error: "ข้อมูลในตะกร้าไม่ครบ" }
+        if (amount === null || amount === 0) return { error: "ใส่จำนวนให้ครบทุกรายการ" }
+
+        entries.push({ skuId, unitTypeId, amount, type })
+    }
+
+    return { entries }
+}
+
+/**
+ * บันทึกตะกร้าเบิกของ — ตัดสต็อกหลายตัวเลือกข้ามหลายสินค้าในครั้งเดียว
+ *
+ * ไม่ต้องเช็คเจ้าของรายสินค้า เพราะรับเข้า/ตัดออกเปิดให้ทุกคนที่ล็อกอินอยู่แล้ว
+ * (เหมือนที่หน้าสินค้า) ส่วนตั้งยอดใหม่ถูกกันออกไปตั้งแต่ cleanCartEntries()
+ */
+export async function saveCartAction(items, type, note) {
+    const user = await requireUser()
+    if (!user) return UNAUTHORIZED
+
+    const { entries, error } = cleanCartEntries(items, type)
+    if (error) return { ok: false, error }
+
+    const result = await adjustCartStock({
+        userId: user.id,
+        entries,
+        note: String(note ?? "").trim() || null,
+    })
+
+    // เขียนประวัติหลังตอบ response แล้ว เหมือนเส้นทางปรับสต็อกอื่น ๆ
+    if (result.ok && result.historyRows?.length) {
+        const rows = result.historyRows
+        after(() => writeStockHistory(rows))
+    }
+
+    const { historyRows: _unused, ...payload } = result
+    return payload
+}
+
+/**
+ * ค้นหาตัวเลือกข้ามทุกสินค้า — หน้าเบิกเร็วยิงตัวนี้ทุกครั้งที่พิมพ์ (หน่วงไว้ฝั่ง client แล้ว)
+ *
+ * ต้องล็อกอินก่อน เพราะเป็นเครื่องมือสำหรับคนทำงานหลังร้าน ไม่ใช่หน้าร้านที่เปิดให้ดูทั่วไป
+ */
+export async function searchSkusAction(query, categoryId = null) {
+    if (!(await requireUser())) return UNAUTHORIZED
+
+    const trimmed = String(query ?? "").trim()
+    if (trimmed.length < 2) return { ok: true, skus: [] }
+
+    const target = categoryId === null || categoryId === "" ? null : toId(categoryId)
+    if (categoryId !== null && categoryId !== "" && target === null) {
+        return { ok: false, error: "หมวดหมู่ไม่ถูกต้อง" }
+    }
+
+    return { ok: true, skus: await searchSkus(trimmed, target) }
+}
+
 // หมวดหมู่ใช้ร่วมกันทั้งระบบเหมือนหน่วยนับ ใครล็อกอินแล้วก็สร้างได้
 export async function createCategoryAction(name) {
     const trimmed = String(name ?? "").trim()
@@ -620,6 +713,8 @@ export async function createCategoryAction(name) {
 
     const category = await createCategory(trimmed, user.id)
     if (!category) return { ok: false, error: "สร้างหมวดหมู่ไม่สำเร็จ" }
+
+    revalidateTag(CATEGORIES_TAG, "max")
 
     return { ok: true, category }
 }
@@ -639,6 +734,8 @@ export async function updateCategoryAction(id, name) {
     const category = await updateCategory(categoryId, trimmed)
     if (!category) return { ok: false, error: "แก้หมวดหมู่ไม่สำเร็จ" }
 
+    revalidateTag(CATEGORIES_TAG, "max")
+
     return { ok: true, category }
 }
 
@@ -648,7 +745,10 @@ export async function deleteCategoryAction(id) {
     if (!(await requireUser())) return UNAUTHORIZED
     if (!categoryId) return { ok: false, error: "ไม่พบหมวดหมู่" }
 
-    return deleteCategory(categoryId)
+    const result = await deleteCategory(categoryId)
+    if (result.ok) revalidateTag(CATEGORIES_TAG, "max")
+
+    return result
 }
 
 /**
@@ -675,6 +775,9 @@ export async function setProductsCategoryAction(productIds, categoryId) {
     const count = await setProductsCategory(ids, target)
     if (count === null) return { ok: false, error: "ย้ายหมวดหมู่ไม่สำเร็จ" }
 
+    // จำนวนสินค้าต่อหมวด (_count) ที่แคชไว้เปลี่ยนไปแล้ว
+    revalidateTag(CATEGORIES_TAG, "max")
+
     // ไม่ revalidate ตามหมายเหตุด้านบนของไฟล์ — ฝั่ง UI ทับ state เองจาก ids ที่ส่งมา
     return { ok: true, count, categoryId: target }
 }
@@ -697,6 +800,9 @@ export async function setProductCategoryAction(productId, categoryId) {
     const updated = await setProductCategory(id, target)
     if (!updated) return { ok: false, error: "ย้ายหมวดหมู่ไม่สำเร็จ" }
 
+    // จำนวนสินค้าต่อหมวด (_count) ที่แคชไว้เปลี่ยนไปแล้ว
+    revalidateTag(CATEGORIES_TAG, "max")
+
     return { ok: true, product: updated }
 }
 
@@ -711,10 +817,7 @@ export async function getProductSkusAction(productId) {
     if (!(await requireUser())) return UNAUTHORIZED
     if (!id) return { ok: false, error: "ไม่พบสินค้า" }
 
-    const product = await getProduct(id)
-    if (!product) return { ok: false, error: "ไม่พบสินค้า" }
-
-    return { ok: true, skus: product.skus ?? [] }
+    return { ok: true, skus: await getSkusByProduct(id) }
 }
 
 // ประวัติมีชื่อคนบันทึกติดมาด้วย เลยไม่เปิดให้คนนอกอ่าน

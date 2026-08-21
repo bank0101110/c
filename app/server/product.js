@@ -1,4 +1,6 @@
 import { prisma } from "@/prisma/prisma.js"
+import { getCategories } from "@/app/server/category"
+import { getUnitTypes } from "@/app/server/unitType"
 
 /**
  * ชุดฟิลด์สำหรับ "รายการสินค้า" (หน้าแรก/หน้าจัดการ) — ตั้งใจไม่ลาก skus ทั้งก้อนมา
@@ -9,6 +11,14 @@ import { prisma } from "@/prisma/prisma.js"
  */
 export const productInclude = {
     baseUnit: true,
+    // ยอดของสินค้าที่มีตัวเลือกย่อยคือผลรวมของ SKU ซึ่งนับเป็นหน่วยหลักของ SKU ไม่ใช่ของ
+    // Product การ์ดจึงต้องรู้ชื่อหน่วยนั้นด้วย ไม่งั้นหน้าแรกกับหน้าสินค้าจะขึ้นคนละหน่วย
+    // distinct + take 2 พอสำหรับแยกว่า "ทุกตัวหน่วยเดียวกัน" หรือ "ปนกัน" โดยไม่ลาก SKU มาทั้งก้อน
+    skus: {
+        select: { unitTypeId: true, baseUnit: { select: { name: true } } },
+        distinct: ["unitTypeId"],
+        take: 2,
+    },
     ProductUnitType: { include: { unitType: true }, orderBy: { id: "asc" } },
     // ส่งไปถึง client ด้วย เลยเอาเฉพาะฟิลด์ที่ต้องโชว์ ไม่ลากทั้ง user มา
     owner: { select: { id: true, name: true, email: true, image: true } },
@@ -25,20 +35,6 @@ export const productNoteSelect = {
     noteUpdatedBy: { select: { id: true, name: true, email: true, image: true } },
 }
 
-/** ชุดเต็มสำหรับหน้าสินค้าเดี่ยว — มี SKU พร้อมหน่วยของแต่ละตัว */
-export const productDetailInclude = {
-    ...productInclude,
-    // เฉพาะหน้าสินค้าเดี่ยว — หน้ารายการไม่ต้อง join ผู้แก้หมายเหตุมาทีละร้อยแถว
-    noteUpdatedBy: { select: { id: true, name: true, email: true, image: true } },
-    skus: {
-        orderBy: { id: "asc" },
-        include: {
-            baseUnit: true,
-            SkuUnitType: { include: { unitType: true }, orderBy: { id: "asc" } },
-        },
-    },
-}
-
 /**
  * ดันสินค้าที่ยังมีของขึ้นก่อน ของที่หมดแล้วไปกองล่างสุด
  *
@@ -52,13 +48,130 @@ function inStockFirst(products) {
     return products.sort((a, b) => (b.qty > 0) - (a.qty > 0))
 }
 
+/**
+ * ประกอบสินค้าหลายตัวจาก query แบน ๆ ให้ได้รูปร่างเดียวกับที่ UI เคยได้จาก include
+ *
+ * เหตุผลเดียวกับ getProduct(): include ซ้อนชั้น = ไป-กลับ DB ชั้นละรอบและรอกันเป็นทอด ๆ
+ * (วัดจริงกับสินค้า 317 รายการ: ของเดิม ~1,500ms / แบบนี้ ~210ms)
+ *
+ * unitLinks ส่งมาเฉพาะหน้าที่ต้องใช้หน่วยเสริมของสินค้า (หน้าจัดการ) หน้าแรกไม่ต้อง
+ */
+function assembleProducts({ products, skuRows, unitById, categoryById, unitLinks = null }) {
+    const skusByProduct = new Map()
+    for (const row of skuRows) {
+        const entry = skusByProduct.get(row.productId) ?? { count: 0, unitIds: new Set() }
+        entry.count += 1
+        entry.unitIds.add(row.unitTypeId)
+        skusByProduct.set(row.productId, entry)
+    }
+
+    const linksByProduct = new Map()
+    for (const link of unitLinks ?? []) {
+        const list = linksByProduct.get(link.ProductId)
+        if (list) list.push(link)
+        else linksByProduct.set(link.ProductId, [link])
+    }
+
+    return products.map((product) => {
+        const entry = skusByProduct.get(product.id)
+
+        return {
+            ...product,
+            baseUnit: unitById.get(product.unitTypeId) ?? null,
+            category: categoryById.get(product.categoryId) ?? null,
+            // การ์ดใช้แค่ "ชื่อหน่วยของ SKU ซ้ำกันไหม" (stockUnitName) ไม่ได้ใช้ SKU เป็นตัว ๆ
+            // ส่งไปแค่หน่วยที่ไม่ซ้ำก็พอ payload จะได้ไม่บวมตามจำนวน SKU
+            skus: [...(entry?.unitIds ?? [])].map((unitTypeId) => ({
+                baseUnit: unitById.get(unitTypeId) ?? null,
+            })),
+            _count: { skus: entry?.count ?? 0 },
+            ...(unitLinks
+                ? {
+                      ProductUnitType: (linksByProduct.get(product.id) ?? []).map((link) => ({
+                          ...link,
+                          unitType: unitById.get(link.unitTypeId) ?? null,
+                      })),
+                  }
+                : {}),
+        }
+    })
+}
+
+/** ฟิลด์ของตัวสินค้าเองที่หน้ารายการต้องใช้ — ไม่มี relation สักตัว */
+const productListSelect = {
+    id: true,
+    name: true,
+    imageUrl: true,
+    qty: true,
+    unitTypeId: true,
+    categoryId: true,
+    ownerId: true,
+    note: true,
+    noteImageUrl: true,
+    createdAt: true,
+}
+
 export async function getProducts() {
     try {
-        const products = await prisma.product.findMany({
-            orderBy: { createdAt: "desc" },
-            include: productInclude,
-        })
-        return inStockFirst(products)
+        const [products, skuRows, unitTypes, categories] = await Promise.all([
+            prisma.product.findMany({
+                orderBy: { createdAt: "desc" },
+                select: productListSelect,
+            }),
+            prisma.sku.findMany({ select: { productId: true, unitTypeId: true } }),
+            getUnitTypes(),
+            getCategories(),
+        ])
+
+        return inStockFirst(
+            assembleProducts({
+                products,
+                skuRows,
+                unitById: new Map(unitTypes.map((unit) => [unit.id, unit])),
+                categoryById: new Map(categories.map((category) => [category.id, category])),
+            })
+        )
+    } catch (error) {
+        console.error(error)
+        return []
+    }
+}
+
+export async function getProductsByOwner(ownerId) {
+    try {
+        const [products, skuRows, unitLinks, unitTypes, categories] = await Promise.all([
+            prisma.product.findMany({
+                where: { ownerId },
+                orderBy: { createdAt: "desc" },
+                select: {
+                    ...productListSelect,
+                    // หน้าจัดการโชว์ชื่อเจ้าของในบางจุด และใช้เช็คสิทธิ์ฝั่ง client
+                    owner: { select: { id: true, name: true, email: true, image: true } },
+                },
+            }),
+            prisma.sku.findMany({
+                where: { product: { ownerId } },
+                select: { productId: true, unitTypeId: true },
+            }),
+            // หน่วยเสริมของสินค้า — กล่องปรับสต็อกกับกล่องแก้ไขต้องใช้
+            prisma.productUnitType.findMany({
+                where: { product: { ownerId } },
+                orderBy: { id: "asc" },
+                select: { id: true, ProductId: true, unitTypeId: true },
+            }),
+            getUnitTypes(),
+            getCategories(),
+        ])
+
+        return inStockFirst(
+            assembleProducts({
+                products,
+                skuRows,
+                unitLinks,
+                unitById: new Map(unitTypes.map((unit) => [unit.id, unit])),
+                categoryById: new Map(categories.map((category) => [category.id, category])),
+            })
+        )
     } catch (error) {
         console.error(error)
         return []
@@ -66,36 +179,120 @@ export async function getProducts() {
 }
 
 /**
- * สินค้าของเจ้าของคนเดียว — ใช้ที่หน้า /manage
+ * ดึงแถว SKU กับแถวหน่วยเสริมแบบแบน ๆ — ไม่ join หน่วยผ่าน Prisma
  *
- * หน้าแรกยังโชว์ของทุกคนเหมือนเดิม เพราะใครก็ดูสต็อกและตัดเข้า-ออกได้
- * ส่วนหน้าจัดการโชว์เฉพาะที่ตัวเองแก้ได้จริง จะได้ไม่มีแถวที่กดปุ่มอะไรไม่ได้เลยมาปน
- *
- * หมายเหตุ: สินค้าเก่าที่ ownerId เป็น null จะไม่ขึ้นที่นี่ ทั้งที่ canManageProduct()
- * ยังให้สิทธิ์แก้อยู่ — ตอนนี้ใน DB ไม่มีสักรายการ และของใหม่ผูกเจ้าของเสมอ
- * ถ้าวันหนึ่งมีขึ้นมา ให้เปลี่ยน where เป็น { OR: [{ ownerId }, { ownerId: null }] }
+ * ประกอบหน่วยเองทีหลัง เพราะ include ซ้อนชั้นแปลว่า
+ * ไป-กลับ DB เพิ่มอีกชั้นละรอบ (หน่วยของ SKU + หน่วยของ SkuUnitType = 2 รอบ) ทั้งที่
+ * ตาราง UnitType ทั้งตารางมีไม่กี่สิบแถวและถูกแคชไว้แล้ว
  */
-export async function getProductsByOwner(ownerId) {
+function fetchSkuRows(productId) {
+    return Promise.all([
+        prisma.sku.findMany({
+            where: { productId },
+            orderBy: { id: "asc" },
+            select: {
+                id: true,
+                productId: true,
+                name: true,
+                code: true,
+                imageUrl: true,
+                qty: true,
+                unitTypeId: true,
+                defaultUnitTypeId: true,
+            },
+        }),
+        prisma.skuUnitType.findMany({
+            where: { sku: { productId } },
+            orderBy: { id: "asc" },
+            select: { id: true, skuId: true, unitTypeId: true },
+        }),
+    ])
+}
+
+/** ประกอบหน่วยเข้ากับ SKU ฝั่ง JS — ไม่มี query เพิ่ม */
+function attachUnits(rows, links, unitById) {
+    const linksBySku = new Map()
+    for (const link of links) {
+        const list = linksBySku.get(link.skuId)
+        if (list) list.push(link)
+        else linksBySku.set(link.skuId, [link])
+    }
+
+    return rows.map((sku) => ({
+        ...sku,
+        baseUnit: unitById.get(sku.unitTypeId) ?? null,
+        SkuUnitType: (linksBySku.get(sku.id) ?? []).map((link) => ({
+            ...link,
+            unitType: unitById.get(link.unitTypeId) ?? null,
+        })),
+    }))
+}
+
+/** ตัวเลือกย่อยของสินค้าหนึ่งชิ้น — ใช้ที่กล่องจัดการตัวเลือก ไม่ต้องลากตัวสินค้ามาด้วย */
+export async function getSkusByProduct(productId) {
     try {
-        const products = await prisma.product.findMany({
-            where: { ownerId },
-            orderBy: { createdAt: "desc" },
-            include: productInclude,
-        })
-        return inStockFirst(products)
+        const [unitTypes, [rows, links]] = await Promise.all([
+            getUnitTypes(),
+            fetchSkuRows(productId),
+        ])
+        return attachUnits(rows, links, new Map(unitTypes.map((unit) => [unit.id, unit])))
     } catch (error) {
         console.error(error)
         return []
     }
 }
 
+/**
+ * สินค้าหนึ่งชิ้นพร้อมตัวเลือกย่อยทั้งหมด — ใช้ที่หน้า /product/[id]
+ *
+ * ยิงหลาย query ขนานกันแล้วประกอบเอง แทนที่จะ include ซ้อนชั้นเดียวจบ
+ *
+ * Prisma แปลง include แต่ละชั้นเป็น query แยกและรอกันเป็นทอด ๆ ของเดิมจึงกลายเป็น
+ * ไป-กลับ DB สิบกว่ารอบต่อการเปิดหน้าเดียว ซึ่งบน Supabase pooler ข้ามภูมิภาค
+ * ตกรอบละเกือบร้อยมิลลิวินาที (วัดได้ ~740ms สำหรับสินค้าที่มี 99 ตัวเลือก)
+ * พอแยกเป็น query แบน ๆ ที่ไม่ขึ้นต่อกันแล้วยิงพร้อมกัน เหลือ ~200ms
+ *
+ * หน่วยนับกับหมวดหมู่ดึงจากตัวที่แคชไว้ ปกติจึงไม่แตะ DB เลย
+ */
 export async function getProduct(id) {
     try {
-        const product = await prisma.product.findUnique({
-            where: { id },
-            include: productDetailInclude,
-        })
-        return product
+        const [product, unitTypes, categories, [skuRows, skuLinks]] = await Promise.all([
+            prisma.product.findUnique({
+                where: { id },
+                select: {
+                    id: true,
+                    name: true,
+                    imageUrl: true,
+                    qty: true,
+                    unitTypeId: true,
+                    categoryId: true,
+                    ownerId: true,
+                    createdAt: true,
+                    note: true,
+                    noteImageUrl: true,
+                    noteUpdatedAt: true,
+                    owner: { select: { id: true, name: true, email: true, image: true } },
+                    noteUpdatedBy: { select: { id: true, name: true, email: true, image: true } },
+                },
+            }),
+            getUnitTypes(),
+            getCategories(),
+            fetchSkuRows(id),
+        ])
+
+        if (!product) return null
+
+        const unitById = new Map(unitTypes.map((unit) => [unit.id, unit]))
+        const skus = attachUnits(skuRows, skuLinks, unitById)
+
+        return {
+            ...product,
+            baseUnit: unitById.get(product.unitTypeId) ?? null,
+            // หมวดมาจากลิสต์ที่แคชไว้แล้ว ไม่ต้อง join เพิ่มอีกรอบ
+            category: categories.find((item) => item.id === product.categoryId) ?? null,
+            skus,
+            _count: { skus: skus.length },
+        }
     } catch (error) {
         console.error(error)
         return null

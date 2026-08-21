@@ -23,7 +23,7 @@ import { ProductRowActions } from "@/components/manage/product-row-actions";
 import { setProductsCategoryAction } from "@/app/manage/actions";
 import { canManageProduct } from "@/lib/permissions";
 import { useUrlState } from "@/lib/use-url-state";
-import { formatBreakdown, productUnits } from "@/lib/stock";
+import { stockUnitName } from "@/lib/stock";
 
 // คอลัมน์ต้องตรงกันระหว่างหัวตารางกับแถว เลยแชร์คลาสเดียว
 // จอกว้างเป็นตาราง 5 คอลัมน์ (รูป + 4 คอลัมน์เดิม) จอแคบยุบเหลือ 3 แล้วซ้อนเป็นการ์ด
@@ -60,8 +60,7 @@ function Thumbnail({ product }) {
 }
 
 function StockCell({ product }) {
-  const units = productUnits(product);
-  const smallestUnit = units.at(-1);
+  const unitName = stockUnitName(product);
 
   if (product.qty <= 0) {
     return <Badge variant="destructive">หมด</Badge>;
@@ -70,13 +69,8 @@ function StockCell({ product }) {
   return (
     <div className="flex flex-col gap-0.5">
       <span className="font-medium tabular-nums">
-        {product.qty} {smallestUnit?.name}
+        {product.qty} {unitName}
       </span>
-      {units.length > 1 && (
-        <span className="text-xs text-muted-foreground">
-          {formatBreakdown(product.qty, units)}
-        </span>
-      )}
     </div>
   );
 }

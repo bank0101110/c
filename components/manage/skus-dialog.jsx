@@ -135,7 +135,8 @@ function SkuRow({ sku, onEdit, onDelete, busy, selected, onToggle }) {
             </Badge>
           )}
           <span className="text-xs text-muted-foreground">
-            คงเหลือ {sku.qty} {units.at(-1)?.name ?? ""}
+            {/* ยอดเก็บเป็นหน่วยหลัก แสดงด้วยหน่วยหลักเสมอ ไม่แปลงขึ้นหน่วยใหญ่ */}
+            คงเหลือ {sku.qty} {sku.baseUnit?.name ?? ""}
             {units.length > 1 && ` · ${units.length} หน่วย`}
           </span>
           {/* ตัวที่ยังไม่ได้ตั้งไม่ต้องโชว์ — หน้าสินค้าจะใช้หน่วยหลักอยู่แล้ว */}

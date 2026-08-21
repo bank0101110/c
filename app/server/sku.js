@@ -1,4 +1,5 @@
 import { prisma } from "@/prisma/prisma.js"
+import { getUnitTypes } from "@/app/server/unitType"
 
 export const skuInclude = {
     baseUnit: true,
@@ -232,4 +233,67 @@ export async function syncProductQty(tx, productId) {
         data: { qty: totals._sum.qty ?? 0 },
         select: { id: true, qty: true },
     })
+}
+
+/**
+ * ค้นหาตัวเลือกย่อยข้ามทุกสินค้า — ใช้ที่หน้าเบิกเร็ว
+ *
+ * ค้นได้ทั้งชื่อตัวเลือก รหัส SKU และชื่อสินค้าแม่ เพราะคนหยิบของนึกออกไม่เหมือนกัน
+ * บางคนจำชื่อสินค้า บางคนอ่านรหัสจากกล่อง
+ *
+ * หน่วยประกอบจากตาราง UnitType ที่แคชไว้ ไม่ join ซ้อนชั้น (เหตุผลเดียวกับ getProduct)
+ */
+export async function searchSkus(query, categoryId = null, limit = 20) {
+    try {
+        const [rows, unitTypes] = await Promise.all([
+            prisma.sku.findMany({
+                where: {
+                    AND: [
+                        categoryId ? { product: { categoryId } } : {},
+                        {
+                            OR: [
+                                { name: { contains: query, mode: "insensitive" } },
+                                { code: { contains: query, mode: "insensitive" } },
+                                { product: { name: { contains: query, mode: "insensitive" } } },
+                            ],
+                        },
+                    ],
+                },
+                // ตัวที่มีของขึ้นก่อน คนเบิกมองหาของที่หยิบได้จริง
+                orderBy: [{ qty: "desc" }, { id: "asc" }],
+                take: limit,
+                select: {
+                    id: true,
+                    name: true,
+                    code: true,
+                    imageUrl: true,
+                    qty: true,
+                    unitTypeId: true,
+                    defaultUnitTypeId: true,
+                    SkuUnitType: { select: { unitTypeId: true } },
+                    product: { select: { id: true, name: true } },
+                },
+            }),
+            getUnitTypes(),
+        ])
+
+        const unitById = new Map(unitTypes.map((unit) => [unit.id, unit]))
+
+        return rows.map((sku) => ({
+            id: sku.id,
+            name: sku.name,
+            code: sku.code,
+            imageUrl: sku.imageUrl,
+            qty: sku.qty,
+            defaultUnitTypeId: sku.defaultUnitTypeId,
+            product: sku.product,
+            units: [sku.unitTypeId, ...sku.SkuUnitType.map((entry) => entry.unitTypeId)]
+                .map((id) => unitById.get(id))
+                .filter(Boolean)
+                .sort((a, b) => b.qty - a.qty),
+        }))
+    } catch (error) {
+        console.error(error)
+        return []
+    }
 }

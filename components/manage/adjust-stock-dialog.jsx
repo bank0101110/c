@@ -28,7 +28,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { adjustStockAction } from "@/app/manage/actions";
 import { allowedStockTypes, canManageProduct } from "@/lib/permissions";
-import { formatBreakdown, productUnits, toBase } from "@/lib/stock";
+import { productUnits, toBase } from "@/lib/stock";
 
 export const TYPE_OPTIONS = [
   { value: "IN", label: "รับเข้า" },
@@ -56,7 +56,8 @@ export function AdjustStockDialog({
   children,
 }) {
   const units = useMemo(() => productUnits(product), [product]);
-  const smallestUnit = units.at(-1);
+  // ยอดคงเหลือเก็บเป็นหน่วยหลัก แสดงด้วยหน่วยหลักเท่านั้น ไม่แปลงเป็นลัง/แพ็คให้เอง
+  const baseUnit = product.baseUnit ?? units.at(-1);
   const [open, setOpen] = useState(false);
   const [unitTypeId, setUnitTypeId] = useState("");
   const [type, setType] = useState(defaultType);
@@ -195,8 +196,7 @@ export function AdjustStockDialog({
         <DialogHeader>
           <DialogTitle>ปรับสต็อก — {product.name}</DialogTitle>
           <DialogDescription>
-            คงเหลือ {product.qty} {smallestUnit?.name ?? "หน่วย"}
-            {units.length > 1 && ` — ${formatBreakdown(product.qty, units)}`}
+            คงเหลือ {product.qty} {baseUnit?.name ?? "หน่วย"}
           </DialogDescription>
         </DialogHeader>
 
@@ -287,8 +287,8 @@ export function AdjustStockDialog({
                   {type === "OUT"
                     ? `ตัดออกได้สูงสุด ${availableInUnit} ${selectedUnit.name}`
                     : hasAmount && factor > 1
-                      ? `= ${parsedAmount * factor} ${smallestUnit?.name ?? "หน่วย"}`
-                      : `1 ${selectedUnit.name} = ${factor} ${smallestUnit?.name ?? "หน่วย"}`}
+                      ? `= ${parsedAmount * factor} ${baseUnit?.name ?? "หน่วย"}`
+                      : `1 ${selectedUnit.name} = ${factor} ${baseUnit?.name ?? "หน่วย"}`}
                 </p>
               )}
             </div>
