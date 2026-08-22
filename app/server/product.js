@@ -30,7 +30,7 @@ export const productInclude = {
 export const productNoteSelect = {
     id: true,
     note: true,
-    noteImageUrl: true,
+    noteImageUrls: true,
     noteUpdatedAt: true,
     noteUpdatedBy: { select: { id: true, name: true, email: true, image: true } },
 }
@@ -107,7 +107,7 @@ const productListSelect = {
     categoryId: true,
     ownerId: true,
     note: true,
-    noteImageUrl: true,
+    noteImageUrls: true,
     createdAt: true,
 }
 
@@ -269,7 +269,7 @@ export async function getProduct(id) {
                     ownerId: true,
                     createdAt: true,
                     note: true,
-                    noteImageUrl: true,
+                    noteImageUrls: true,
                     noteUpdatedAt: true,
                     owner: { select: { id: true, name: true, email: true, image: true } },
                     noteUpdatedBy: { select: { id: true, name: true, email: true, image: true } },
@@ -455,15 +455,16 @@ export async function deleteProduct(id) {
  * ทับของเดิมทั้งก้อน (ไม่เก็บประวัติหมายเหตุ) เพราะสิ่งที่คนอ่านต้องการคือ "ตอนนี้ของอยู่ไหน"
  * ไม่ใช่ว่าเคยอยู่ไหนมาบ้าง ส่วนใครแก้ล่าสุดเมื่อไหร่เก็บไว้ให้ตามตัวคนตอบได้
  */
-export async function saveProductNote(id, note, imageUrl, userId) {
-    const hasContent = Boolean(note || imageUrl)
+export async function saveProductNote(id, note, imageUrls, userId) {
+    const hasContent = Boolean(note || imageUrls.length > 0)
 
     try {
         return await prisma.product.update({
             where: { id },
             data: {
                 note,
-                noteImageUrl: imageUrl,
+                // set ทับทั้งชุดเสมอ — ลำดับที่ส่งมาคือลำดับที่จะโชว์
+                noteImageUrls: { set: imageUrls },
                 // ล้างหมายเหตุจนไม่เหลืออะไร ก็ไม่ต้องค้างว่าใครแก้ล่าสุด
                 noteUpdatedAt: hasContent ? new Date() : null,
                 noteUpdatedById: hasContent ? userId : null,

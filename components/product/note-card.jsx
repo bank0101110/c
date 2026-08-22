@@ -1,7 +1,16 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { ImageOff, MapPin, Maximize2, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ImageOff,
+  MapPin,
+  Maximize2,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -17,11 +26,16 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
-import { ImageField, uploadPendingImage } from "@/components/manage/image-field";
+import { uploadPendingImage } from "@/components/manage/image-field";
+import { NoteImagesField } from "@/components/product/note-images-field";
 import { saveProductNoteAction } from "@/app/manage/actions";
 import { thumbnailUrl } from "@/lib/images";
 
 const NOTE_MAX_LENGTH = 500;
+
+// ต้องตรงกับ NOTE_MAX_IMAGES ฝั่ง server — ที่นี่กันไว้ให้ผู้ใช้เห็นตั้งแต่ตอนเลือก
+// ส่วนของจริงตัดสินที่ saveProductNoteAction
+const NOTE_MAX_IMAGES = 5;
 
 const formatWhen = (value) =>
   new Date(value).toLocaleString("th-TH", {
@@ -31,17 +45,28 @@ const formatWhen = (value) =>
     minute: "2-digit",
   });
 
-/** รูปจุดวางแบบเต็มจอ — กดที่รูปย่อแล้วค่อยโหลดต้นฉบับ ไม่ต้องแบกไฟล์ใหญ่มาตั้งแต่เปิดหน้า */
-function PhotoDialog({ url, alt }) {
+/**
+ * รูปจุดวางแบบเต็มจอ — กดที่รูปย่อแล้วค่อยโหลดต้นฉบับ ไม่ต้องแบกไฟล์ใหญ่มาตั้งแต่เปิดหน้า
+ *
+ * มีหลายรูปก็ยังโชว์รูปย่อใบเดียวติดป้ายจำนวนที่เหลือ ไม่ได้เรียงรูปย่อทุกใบออกมา
+ * เพราะกล่องหมายเหตุอยู่กลางหน้าสินค้า ปล่อยให้มันสูงขึ้นเรื่อย ๆ ตามจำนวนรูปไม่ได้
+ */
+function PhotoDialog({ urls, alt }) {
   const [failed, setFailed] = useState(false);
+  const [at, setAt] = useState(0);
+
+  const total = urls.length;
+  const current = urls[Math.min(at, total - 1)];
+
+  const step = (delta) => setAt((prev) => (prev + delta + total) % total);
 
   return (
-    <Dialog>
+    <Dialog onOpenChange={(open) => open && setAt(0)}>
       <DialogTrigger
         render={
           <button
             type="button"
-            aria-label="ดูรูปจุดวางแบบเต็ม"
+            aria-label={total > 1 ? `ดูรูปจุดวางทั้ง ${total} รูป` : "ดูรูปจุดวางแบบเต็ม"}
             className="group relative size-20 shrink-0 overflow-hidden rounded-xl border border-border bg-muted outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:size-24"
           />
         }
@@ -51,7 +76,7 @@ function PhotoDialog({ url, alt }) {
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={thumbnailUrl(url)}
+            src={thumbnailUrl(urls[0])}
             alt={alt}
             loading="lazy"
             decoding="async"
@@ -59,6 +84,13 @@ function PhotoDialog({ url, alt }) {
             className="size-full object-cover transition-transform duration-200 group-hover:scale-105"
           />
         )}
+
+        {total > 1 && (
+          <span className="absolute top-1 left-1 rounded-md bg-background/85 px-1.5 py-0.5 text-[0.65rem] font-medium text-foreground">
+            +{total - 1}
+          </span>
+        )}
+
         <span className="absolute right-1 bottom-1 rounded-md bg-background/80 p-1 text-foreground opacity-0 transition-opacity group-hover:opacity-100">
           <Maximize2 className="size-3" />
         </span>
@@ -67,14 +99,45 @@ function PhotoDialog({ url, alt }) {
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>รูปจุดวางสินค้า</DialogTitle>
-          <DialogDescription>{alt}</DialogDescription>
+          <DialogDescription>
+            {alt}
+            {total > 1 ? ` — รูปที่ ${at + 1} จาก ${total}` : ""}
+          </DialogDescription>
         </DialogHeader>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={url}
-          alt={alt}
-          className="max-h-[70vh] w-full rounded-xl object-contain"
-        />
+
+        <div className="relative">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={current}
+            alt={alt}
+            className="max-h-[70vh] w-full rounded-xl object-contain"
+          />
+
+          {total > 1 && (
+            <>
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                aria-label="รูปก่อนหน้า"
+                onClick={() => step(-1)}
+                className="absolute top-1/2 left-2 -translate-y-1/2"
+              >
+                <ChevronLeft />
+              </Button>
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                aria-label="รูปถัดไป"
+                onClick={() => step(1)}
+                className="absolute top-1/2 right-2 -translate-y-1/2"
+              >
+                <ChevronRight />
+              </Button>
+            </>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -90,14 +153,13 @@ function PhotoDialog({ url, alt }) {
 export function NoteCard({ product, currentUser, onSaved }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
-  const [imageUrl, setImageUrl] = useState("");
-  const [imageFile, setImageFile] = useState(null);
+  const [images, setImages] = useState([]);
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
 
   const note = product.note ?? "";
-  const noteImageUrl = product.noteImageUrl ?? "";
-  const hasNote = Boolean(note || noteImageUrl);
+  const noteImages = product.noteImageUrls ?? [];
+  const hasNote = Boolean(note || noteImages.length > 0);
   const editor = product.noteUpdatedBy;
 
   /** เปิดฟอร์มทีไรต้องเริ่มจากค่าปัจจุบันเสมอ ไม่ใช่ค่าที่ค้างจากรอบก่อน */
@@ -105,19 +167,24 @@ export function NoteCard({ product, currentUser, onSaved }) {
     setOpen(next);
     if (!next) return;
     setText(note);
-    setImageUrl(noteImageUrl);
-    setImageFile(null);
+    setImages(noteImages.map((url) => ({ key: url, url })));
   }
 
   function save({ clear = false } = {}) {
     const nextText = clear ? "" : text.trim();
-    const typedUrl = clear ? "" : imageUrl.trim();
-    const pendingImage = clear ? null : imageFile;
+    const pending = clear ? [] : images;
 
     startTransition(async () => {
-      let finalImageUrl = typedUrl;
-      if (pendingImage) {
-        const uploaded = await uploadPendingImage(pendingImage);
+      // อัปทีละไฟล์ ไม่ยิงพร้อมกัน — เน็ตมือถือช้าอยู่แล้ว ยิงขนานกันหลายรูปมีแต่จะแย่ง
+      // แบนด์วิดท์กันเอง และพังทีก็ไม่รู้ว่ารูปไหน
+      const urls = [];
+      for (const item of pending) {
+        if (!item.file) {
+          if (item.url) urls.push(item.url);
+          continue;
+        }
+
+        const uploaded = await uploadPendingImage(item.file);
         if (!uploaded.ok) {
           toast({
             variant: "destructive",
@@ -127,10 +194,10 @@ export function NoteCard({ product, currentUser, onSaved }) {
           });
           return;
         }
-        finalImageUrl = uploaded.url;
+        urls.push(uploaded.url);
       }
 
-      const result = await saveProductNoteAction(product.id, nextText, finalImageUrl);
+      const result = await saveProductNoteAction(product.id, nextText, urls);
       if (!result.ok) {
         toast({
           variant: "destructive",
@@ -156,7 +223,9 @@ export function NoteCard({ product, currentUser, onSaved }) {
   return (
     <div className="mt-6 rounded-xl border border-border bg-muted/30 p-3">
       <div className="flex items-start gap-3">
-        {noteImageUrl && <PhotoDialog url={noteImageUrl} alt={`จุดวางของ ${product.name}`} />}
+        {noteImages.length > 0 && (
+          <PhotoDialog urls={noteImages} alt={`จุดวางของ ${product.name}`} />
+        )}
 
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -169,7 +238,9 @@ export function NoteCard({ product, currentUser, onSaved }) {
             <p className="text-sm break-words whitespace-pre-wrap">{note}</p>
           ) : (
             <p className="text-sm text-muted-foreground">
-              {noteImageUrl ? "มีแต่รูปจุดวาง" : "ยังไม่มีหมายเหตุ — เพิ่มไว้บอกว่าของอยู่ตรงไหน"}
+              {noteImages.length > 0
+                ? "มีแต่รูปจุดวาง"
+                : "ยังไม่มีหมายเหตุ — เพิ่มไว้บอกว่าของอยู่ตรงไหน"}
             </p>
           )}
 
@@ -215,12 +286,11 @@ export function NoteCard({ product, currentUser, onSaved }) {
                   </p>
                 </div>
 
-                <ImageField
+                <NoteImagesField
                   id="product-note-image"
-                  value={imageUrl}
-                  onChange={setImageUrl}
-                  pendingFile={imageFile}
-                  onPendingFileChange={setImageFile}
+                  items={images}
+                  onChange={setImages}
+                  max={NOTE_MAX_IMAGES}
                   disabled={isPending}
                 />
               </div>

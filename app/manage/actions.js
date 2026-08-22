@@ -581,13 +581,39 @@ export async function setSkusDefaultUnitAction(skuIds, unitTypeId) {
 /** หมายเหตุยาวเกินนี้เริ่มอ่านไม่ไหวบนมือถือ และไม่ใช่ที่สำหรับเขียนรายละเอียดยาว ๆ */
 const NOTE_MAX_LENGTH = 500
 
+/** รูปจุดวางเกินนี้กลายเป็นอัลบั้ม ไม่ใช่ "บอกให้รู้ว่าของอยู่ตรงไหน" แล้ว */
+const NOTE_MAX_IMAGES = 5
+
+/**
+ * รับได้ทั้ง array (ของใหม่) และ string เดี่ยว (เผื่อมีที่ไหนยังส่งแบบเดิมมา)
+ *
+ * ตัดค่าว่างกับตัวซ้ำทิ้ง แล้วค่อยนับเพดาน — ผู้ใช้ลบรูปแล้วเหลือช่องว่างค้างใน array
+ * ไม่ควรไปกินโควตา
+ */
+function cleanNoteImages(input) {
+    const list = Array.isArray(input) ? input : [input]
+    const urls = []
+
+    for (const item of list) {
+        const url = String(item ?? "").trim()
+        if (!url || urls.includes(url)) continue
+        urls.push(url)
+    }
+
+    if (urls.length > NOTE_MAX_IMAGES) {
+        return { error: `ใส่รูปได้ไม่เกิน ${NOTE_MAX_IMAGES} รูป` }
+    }
+
+    return { urls }
+}
+
 /**
  * แก้หมายเหตุประจำสินค้า (ที่เก็บของ/ย้ายโกดัง) พร้อมรูปจุดวาง
  *
  * ไม่เช็คเจ้าของ — คนหน้าคลังที่ย้ายของจริงมักไม่ใช่คนสร้างสินค้า ถ้าบังคับให้เจ้าของแก้
  * คนเดียว หมายเหตุจะเก่าค้างจนไม่มีใครเชื่อ แต่ยังบังคับล็อกอินเพื่อให้รู้ว่าใครแก้ล่าสุด
  */
-export async function saveProductNoteAction(productId, note, imageUrl) {
+export async function saveProductNoteAction(productId, note, imageUrls) {
     const id = toId(productId)
     const user = await requireUser()
 
@@ -599,12 +625,10 @@ export async function saveProductNoteAction(productId, note, imageUrl) {
         return { ok: false, error: `หมายเหตุยาวเกิน ${NOTE_MAX_LENGTH} ตัวอักษร` }
     }
 
-    const product = await saveProductNote(
-        id,
-        text || null,
-        String(imageUrl ?? "").trim() || null,
-        user.id
-    )
+    const { urls, error } = cleanNoteImages(imageUrls)
+    if (error) return { ok: false, error }
+
+    const product = await saveProductNote(id, text || null, urls, user.id)
     if (!product) return { ok: false, error: "บันทึกหมายเหตุไม่สำเร็จ" }
 
     return { ok: true, product }

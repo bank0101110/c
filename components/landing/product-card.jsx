@@ -13,7 +13,7 @@ function ProductCardBase({ product }) {
   // สินค้าที่มีตัวเลือกย่อยจะพาไปหน้าสินค้าแทนการเปิด dialog ป้ายเลยต้องบอกให้ตรง
   const skuCount = product._count?.skus ?? 0;
   // มีหมายเหตุที่เก็บของ = ติดหมุดไว้ให้เห็นตั้งแต่หน้ารายการ จะได้รู้ว่าต้องเข้าไปอ่านก่อนไปหยิบ
-  const hasNote = Boolean(product.note || product.noteImageUrl);
+  const hasNote = Boolean(product.note || product.noteImageUrls?.length);
 
   return (
     // group ให้ลูก ๆ ขยับตามตอน hover การ์ด — Tailwind ห่อ hover: ไว้ใน @media (hover: hover)

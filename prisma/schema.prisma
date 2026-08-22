@@ -28,7 +28,9 @@ model Product {
   // หมายเหตุประจำสินค้า — ที่เก็บของ/จุดวาง/ย้ายโกดัง พร้อมรูปถ่ายจุดวางไว้ให้คนอื่นดู
   // ใครที่ล็อกอินแล้วแก้ได้ (แนวเดียวกับการตัดสต็อก) เลยเก็บว่าใครแก้ล่าสุดเมื่อไหร่ไว้ด้วย
   note String?
-  noteImageUrl String?
+  // รูปจุดวางใส่ได้หลายรูป เก็บเป็น text[] แทนการแตกตาราง — ลำดับใน array คือลำดับที่โชว์
+  // และไม่มีที่ไหนต้องอ้างถึงรูปเดี่ยว ๆ ตารางแยกเลยมีแต่ join เพิ่มโดยไม่ได้อะไรกลับมา
+  noteImageUrls String[]
   noteUpdatedAt DateTime?
   noteUpdatedById String?
   noteUpdatedBy User? @relation("ProductNoteEditor", fields: [noteUpdatedById], references: [id], onDelete: SetNull)

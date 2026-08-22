@@ -35,6 +35,33 @@ export async function uploadPendingImage(file) {
   return uploadProductImageAction(formData);
 }
 
+// ช่องรูปแบบหลายรูป (หมายเหตุจุดวาง) ใช้กฎเดียวกันเป๊ะ ๆ เลยเปิดของพวกนี้ให้ใช้ร่วม
+// แทนที่จะก๊อปเพดานไฟล์กับข้อความ error ไปไว้อีกที่แล้วปรับไม่ตรงกันวันหลัง
+export const IMAGE_ACCEPT = ACCEPT;
+export const MAX_SOURCE_MB = formatMb(MAX_SOURCE_BYTES);
+
+/** เช็คไฟล์ต้นฉบับก่อนย่อ — คืนข้อความ error หรือ null ถ้าผ่าน */
+export function imageSourceError(file) {
+  if (!ACCEPT.split(",").includes(file.type)) {
+    return "รองรับเฉพาะไฟล์ JPG, PNG, WebP, GIF และ AVIF";
+  }
+  if (file.size > MAX_SOURCE_BYTES) {
+    return `ไฟล์ใหญ่เกิน ${formatMb(MAX_SOURCE_BYTES)} MB`;
+  }
+  return null;
+}
+
+/** ย่อให้ลงเพดานของเซิร์ฟเวอร์ — คืน { file } หรือ { error } */
+export async function shrinkForUpload(file) {
+  const ready = await compressImage(file);
+  if (ready.size > MAX_UPLOAD_BYTES) {
+    return {
+      error: `ย่อรูปแล้วยังใหญ่เกิน ${formatMb(MAX_UPLOAD_BYTES)} MB — ลองถ่ายใหม่หรือใช้รูปอื่น`,
+    };
+  }
+  return { file: ready };
+}
+
 function Preview({ url }) {
   const [failed, setFailed] = useState(false);
 
@@ -96,12 +123,9 @@ export function ImageField({
     event.target.value = "";
     if (!file) return;
 
-    if (!ACCEPT.split(",").includes(file.type)) {
-      setError("รองรับเฉพาะไฟล์ JPG, PNG, WebP, GIF และ AVIF");
-      return;
-    }
-    if (file.size > MAX_SOURCE_BYTES) {
-      setError(`ไฟล์ใหญ่เกิน ${formatMb(MAX_SOURCE_BYTES)} MB`);
+    const sourceError = imageSourceError(file);
+    if (sourceError) {
+      setError(sourceError);
       return;
     }
 
@@ -115,16 +139,16 @@ export function ImageField({
 
     setCompressing(true);
     // รูปจากกล้องต้องย่อก่อน ไม่งั้นชนเพดาน body ของ Server Action และอัปนานมากบนเน็ตมือถือ
-    const ready = await compressImage(file);
+    const ready = await shrinkForUpload(file);
     setCompressing(false);
 
-    if (ready.size > MAX_UPLOAD_BYTES) {
+    if (ready.error) {
       onPendingFileChange(null);
-      setError(`ย่อรูปแล้วยังใหญ่เกิน ${formatMb(MAX_UPLOAD_BYTES)} MB — ลองถ่ายใหม่หรือใช้รูปอื่น`);
+      setError(ready.error);
       return;
     }
 
-    onPendingFileChange(ready);
+    onPendingFileChange(ready.file);
   }
 
   function clearImage() {
