@@ -8,10 +8,13 @@ export default function ManageLoading() {
       <div className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between gap-2 px-4 sm:px-6">
           <Skeleton className="h-5 w-28" />
+          {/* ต้องซ่อน-แสดงตามจุดเดียวกับ Navbar ตัวจริง ไม่งั้นหน้ากระตุกตอนของจริงมาแทน */}
           <div className="flex items-center gap-3">
-            <Skeleton className="h-4 w-14" />
-            <Skeleton className="h-4 w-12" />
-            <Skeleton className="size-7 rounded-full" />
+            <Skeleton className="hidden h-4 w-14 sm:block" />
+            <Skeleton className="hidden h-4 w-14 sm:block" />
+            <Skeleton className="hidden h-4 w-12 sm:block" />
+            <Skeleton className="hidden size-7 rounded-full sm:block" />
+            <Skeleton className="size-9 rounded-lg sm:hidden" />
           </div>
         </div>
       </div>

@@ -31,9 +31,26 @@ function Avatar({ user }) {
   );
 }
 
-export function UserMenu({ user }) {
+// ใช้ร่วมกันระหว่างเมนูบนแถบ navbar กับเมนูมือถือ — ตรรกะออกจากระบบต้องอยู่ที่เดียว
+function useSignOut(onDone) {
   const router = useRouter();
   const [isPending, setIsPending] = useState(false);
+
+  async function signOut() {
+    setIsPending(true);
+    await authClient.signOut();
+    // Server Component ถือ session อยู่ ต้อง refresh ไม่งั้นยังเห็นชื่อตัวเองค้าง
+    router.refresh();
+    setIsPending(false);
+    onDone?.();
+  }
+
+  return { signOut, isPending };
+}
+
+/** เมนูผู้ใช้บนแถบ navbar — ใช้บนจอ sm ขึ้นไป (มือถือดูที่ AccountPanel ในเมนูสไลด์) */
+export function UserMenu({ user }) {
+  const { signOut, isPending } = useSignOut();
 
   if (!user) {
     return (
@@ -42,14 +59,6 @@ export function UserMenu({ user }) {
         เข้าสู่ระบบ
       </Button>
     );
-  }
-
-  async function handleSignOut() {
-    setIsPending(true);
-    await authClient.signOut();
-    // Server Component ถือ session อยู่ ต้อง refresh ไม่งั้นยังเห็นชื่อตัวเองค้าง
-    router.refresh();
-    setIsPending(false);
   }
 
   return (
@@ -61,11 +70,46 @@ export function UserMenu({ user }) {
       <Button
         size="icon-sm"
         variant="ghost"
-        onClick={handleSignOut}
+        onClick={signOut}
         disabled={isPending}
         aria-label="ออกจากระบบ"
       >
         <LogOut />
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * ส่วนบัญชีผู้ใช้ในเมนูมือถือ
+ *
+ * ต่างจาก UserMenu ตรงที่มีที่ให้โชว์ชื่อเต็มกับปุ่มที่มีข้อความกำกับ ไม่ต้องบีบให้เหลือแต่ไอคอน
+ */
+export function AccountPanel({ user, onDone }) {
+  const { signOut, isPending } = useSignOut(onDone);
+
+  if (!user) {
+    return (
+      <Button
+        nativeButton={false}
+        className="w-full"
+        render={<Link href="/login" onClick={onDone} />}
+      >
+        <LogIn />
+        เข้าสู่ระบบ
+      </Button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-3">
+      <Avatar user={user} />
+      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+        {user.name || user.email}
+      </span>
+      <Button size="sm" variant="outline" onClick={signOut} disabled={isPending}>
+        <LogOut />
+        ออกจากระบบ
       </Button>
     </div>
   );

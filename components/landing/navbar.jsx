@@ -5,6 +5,7 @@ import { PackageSearch } from "lucide-react";
 
 import { siteConfig } from "@/lib/site-config";
 import { UserMenu } from "@/components/auth/user-menu";
+import { MobileMenu } from "@/components/landing/mobile-menu";
 import { SearchBox } from "@/components/landing/search-box";
 
 // showSearch เปิดเฉพาะหน้าที่อยู่ใต้ SearchProvider (ตอนนี้คือหน้าแรก)
@@ -22,7 +23,8 @@ export function Navbar({ currentUser = null, showSearch = false }) {
         </a>
 
         <div className="flex items-center gap-2 sm:gap-4">
-          <nav className="flex items-center gap-3 text-sm font-medium text-muted-foreground sm:gap-6">
+          {/* ลิงก์กับปุ่มผู้ใช้ย้ายไปอยู่ใน MobileMenu บนจอเล็ก — เบียดกันจนกดพลาดถ้าโชว์พร้อมกันหมด */}
+          <nav className="hidden items-center gap-3 text-sm font-medium text-muted-foreground sm:flex sm:gap-6">
             {siteConfig.nav.map((item) => (
               // ขีดใต้วิ่งจากซ้ายไปขวาด้วย scale-x ลื่นกว่าการอนิเมท width
               // ต้องเป็น Link ไม่ใช่ <a> ไม่งั้นกดทีนึงโหลดใหม่ทั้งหน้า ทั้งที่ layout เหมือนเดิม
@@ -38,7 +40,11 @@ export function Navbar({ currentUser = null, showSearch = false }) {
 
           {showSearch && <SearchBox />}
 
-          <UserMenu user={currentUser} />
+          <div className="hidden items-center sm:flex">
+            <UserMenu user={currentUser} />
+          </div>
+
+          <MobileMenu currentUser={currentUser} />
         </div>
       </div>
     </header>
